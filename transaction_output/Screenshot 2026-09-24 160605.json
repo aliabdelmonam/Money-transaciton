@@ -1,0 +1,89 @@
+{
+  "image": "C:\\Users\\Karim\\Desktop\\money-transaction\\synthetic\\Screenshot 2026-09-24 160605.png",
+  "provider": null,
+  "status": "success",
+  "type": null,
+  "amount": 500,
+  "fees": 1,
+  "total": 501,
+  "currency": "EGP",
+  "sender": {
+    "phone": "01001496550"
+  },
+  "receiver": {
+    "phone": "01003608419"
+  },
+  "reference": "014149153760",
+  "datetime": "2025-09-19T16:26:00",
+  "note": null,
+  "evidence": [
+    {
+      "field": "sender",
+      "label": "From",
+      "value": "01001496550"
+    },
+    {
+      "field": "receiver",
+      "label": "To",
+      "value": "01003608419"
+    },
+    {
+      "field": "amount",
+      "label": "Total amount",
+      "value": "EGP500"
+    },
+    {
+      "field": "fees",
+      "label": "Fees",
+      "value": "EGP1"
+    },
+    {
+      "field": "total",
+      "label": "Total Amount Deducted",
+      "value": "EGP 501"
+    },
+    {
+      "field": "reference",
+      "label": "Transaction ID",
+      "value": "014149153760"
+    },
+    {
+      "field": "datetime",
+      "label": "Transaction Time",
+      "value": "04:26 PM. 19 SeD 2025"
+    }
+  ],
+  "unmapped": [
+    {
+      "text": "Payment has been processed Successfully!",
+      "type": null
+    },
+    {
+      "text": "TIIILS",
+      "type": null
+    },
+    {
+      "text": "TIILE",
+      "type": null
+    }
+  ],
+  "ocr_lines": [
+    "Payment has been processed Successfully!",
+    "EGP500",
+    "Total amount",
+    "From",
+    "01001496550",
+    "TIIILS",
+    "To",
+    "01003608419",
+    "TIILE",
+    "Fees",
+    "EGP1",
+    "EGP 501",
+    "Total Amount Deducted",
+    "Transaction ID",
+    "014149153760",
+    "Transaction Time",
+    "04:26 PM. 19 SeD 2025"
+  ]
+}

@@ -15,13 +15,18 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 MIN_CONFIDENCE = 0.6
 
 
-def extract_text(ocr, image_path):
+def extract_lines(ocr, image_path):
+    """OCR lines with their boxes as [x0, y0, x1, y1] in pixels."""
     res = ocr.predict(str(image_path))[0]
-    return "\n".join(
-        text.strip()
-        for text, score in zip(res["rec_texts"], res["rec_scores"])
+    return [
+        {"text": text.strip(), "score": float(score), "box": [int(v) for v in box]}
+        for text, score, box in zip(res["rec_texts"], res["rec_scores"], res["rec_boxes"])
         if score >= MIN_CONFIDENCE and text.strip()
-    )
+    ]
+
+
+def extract_text(ocr, image_path):
+    return "\n".join(line["text"] for line in extract_lines(ocr, image_path))
 
 
 def create_ocr():

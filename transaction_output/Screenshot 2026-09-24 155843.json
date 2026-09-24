@@ -1,0 +1,92 @@
+{
+  "image": "C:\\Users\\Karim\\Desktop\\money-transaction\\synthetic\\Screenshot 2026-09-24 155843.png",
+  "provider": "Axis",
+  "status": "success",
+  "type": null,
+  "amount": 1950,
+  "fees": 0,
+  "total": 1950,
+  "currency": "EGP",
+  "sender": {
+    "phone": "01222903769"
+  },
+  "receiver": {
+    "name": "Alaa G Hamada",
+    "phone": "01129563904"
+  },
+  "reference": "44bf3c8",
+  "datetime": "2026-09-22T22:11:00",
+  "note": null,
+  "evidence": [
+    {
+      "field": "amount",
+      "label": "المبلغ",
+      "value": "ج.م 1950"
+    },
+    {
+      "field": "fees",
+      "label": "رسوم المعاملة",
+      "value": "ج.م 0"
+    },
+    {
+      "field": "total",
+      "label": "المبلغ الكلي",
+      "value": "ج.م 1950"
+    },
+    {
+      "field": "receiver.name",
+      "label": "اسم المستقبل",
+      "value": "Alaa G Hamada"
+    },
+    {
+      "field": "receiver.account",
+      "label": "رقم المرسل إليه",
+      "value": "01129563904"
+    },
+    {
+      "field": "reference",
+      "label": "الرقم المرجعي",
+      "value": "44bf3c8"
+    },
+    {
+      "field": "datetime",
+      "label": "التاريخ",
+      "value": "22/09/2026 10:11 PM"
+    },
+    {
+      "field": "sender.account",
+      "label": "رفم المحفظة",
+      "value": "01222903769"
+    }
+  ],
+  "unmapped": [
+    {
+      "text": "Daxis",
+      "type": null
+    },
+    {
+      "text": "الدفع تم بنجاح",
+      "type": null
+    }
+  ],
+  "ocr_lines": [
+    "Daxis",
+    "الدفع تم بنجاح",
+    "ج.م 1950",
+    "المبلغ",
+    "ج.م 0",
+    "رسوم المعاملة",
+    "ج.م 1950",
+    "المبلغ الكلي",
+    "اسم المستقبل",
+    "Alaa G Hamada",
+    "رقم المرسل إليه",
+    "01129563904",
+    "44bf3c8",
+    "الرقم المرجعي",
+    "التاريخ",
+    "22/09/2026 10:11 PM",
+    "رفم المحفظة",
+    "01222903769"
+  ]
+}

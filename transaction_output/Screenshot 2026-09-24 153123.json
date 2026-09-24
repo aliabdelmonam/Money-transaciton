@@ -1,0 +1,87 @@
+{
+  "image": "C:\\Users\\Karim\\Desktop\\money-transaction\\synthetic\\Screenshot 2026-09-24 153123.png",
+  "provider": "InstaPay",
+  "status": "success",
+  "type": null,
+  "amount": 22000,
+  "fees": null,
+  "total": null,
+  "currency": "EGP",
+  "sender": {
+    "name": "احمد عبدالرحمن عبدالسميع ابراهيم",
+    "account": "ahmedabdalrahman9o@instapay"
+  },
+  "receiver": {
+    "via": "انستاباي",
+    "phone": "01001496550"
+  },
+  "reference": "984767066188",
+  "datetime": "2026-05-21T13:48:00",
+  "note": "نفقات المعيشة",
+  "evidence": [
+    {
+      "field": "receiver",
+      "label": "إلى انستاباي",
+      "value": "01001496550"
+    },
+    {
+      "field": "amount",
+      "label": "المبلغ الإجمالى المحول",
+      "value": "22,000EGP"
+    },
+    {
+      "field": "reference",
+      "label": "المرجع",
+      "value": "984767066188"
+    },
+    {
+      "field": "datetime",
+      "label": "التاريخ",
+      "value": "21 May 2026 01:48 PM"
+    },
+    {
+      "field": "note",
+      "label": "ملاحظة",
+      "value": "نفقات المعيشة"
+    },
+    {
+      "field": "sender",
+      "label": null,
+      "value": "احمد عبدالرحمن عبدالسميع ابراهيم"
+    },
+    {
+      "field": "sender",
+      "label": null,
+      "value": "ahmedabdalrahman9o@instapay"
+    }
+  ],
+  "unmapped": [
+    {
+      "text": "تمت العملية بنجاح",
+      "type": null
+    },
+    {
+      "text": "POWERED BY",
+      "type": null
+    }
+  ],
+  "ocr_lines": [
+    "تمت العملية بنجاح",
+    "7",
+    "22,000EGP",
+    "المبلغ الإجمالى المحول",
+    "صن",
+    "ahmedabdalrahman9o@instapay",
+    "احمد عبدالرحمن عبدالسميع ابراهيم",
+    "إلى انستاباي",
+    "0",
+    "01001496550",
+    "المرجع",
+    "984767066188",
+    "التاريخ",
+    "21 May 2026 01:48 PM",
+    "ملاحظة",
+    "نفقات المعيشة",
+    "POWERED BY"
+  ]
+}

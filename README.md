@@ -28,6 +28,9 @@ money-transaction/
 ├── paddle_ocr.py                  # PaddleOCR implementation
 ├── easy_ocr.py                    # EasyOCR implementation
 ├── tesseract_ocr.py               # Tesseract OCR implementation
+├── transaction_extractor.py       # Structured field extraction from receipts (uses PaddleOCR)
+├── transaction_config.py          # Label / provider / currency vocabulary for the extractor
+├── transaction_output/            # One JSON result per image
 └── synthetic/                     # Test images directory
     ├── InstaPay_success.jpg
     ├── InstaPay_success_ar.jpg
@@ -94,6 +97,24 @@ sudo apt-get install tesseract-ocr
 ```
 
 ## Usage
+
+### Extracting transaction data
+
+```bash
+python transaction_extractor.py                      # every image in synthetic/
+python transaction_extractor.py receipt.png folder/  # specific images or folders
+```
+
+Produces provider, status, amount / fees / total, currency, sender and receiver
+(name, phone, account, bank), reference, date-time and note for each receipt, saved to
+`transaction_output/<image>.json` together with the evidence (which label each value came from)
+and any lines it could not map.
+
+It works from the layout instead of per-app templates: labels are recognised from the
+Arabic/English vocabulary in `transaction_config.py` and paired with the value beside, below or
+above them. To support a new app or layout, add its label wording, provider name or bank there.
+
+### Comparing OCR engines
 
 Each OCR engine has its own script. Run them individually or all together to compare results.
 

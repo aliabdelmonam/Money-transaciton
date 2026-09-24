@@ -1,0 +1,92 @@
+{
+  "image": "C:\\Users\\Karim\\Desktop\\money-transaction\\synthetic\\Screenshot 2026-09-24 151226.png",
+  "provider": "InstaPay",
+  "status": "success",
+  "type": null,
+  "amount": 1000,
+  "fees": null,
+  "total": null,
+  "currency": "EGP",
+  "sender": {
+    "account": "muhammedd002@instapay",
+    "name": "محمد عادل توفيق محمد"
+  },
+  "receiver": {
+    "via": "Mobile Wallet",
+    "name": "Mahmoud F A*********",
+    "phone": "01080719837"
+  },
+  "reference": "433891004642",
+  "datetime": "2026-09-19T13:37:00",
+  "note": "Living Expenses",
+  "evidence": [
+    {
+      "field": "sender",
+      "label": "From",
+      "value": "muhammedd002@instapay"
+    },
+    {
+      "field": "sender",
+      "label": "From",
+      "value": "محمد عادل توفيق محمد"
+    },
+    {
+      "field": "receiver",
+      "label": "To Mobile Wallet",
+      "value": "Mahmoud F A*********"
+    },
+    {
+      "field": "receiver",
+      "label": "To Mobile Wallet",
+      "value": "01080719837"
+    },
+    {
+      "field": "amount",
+      "label": "Transfer Amount",
+      "value": "1,000 EGP"
+    },
+    {
+      "field": "reference",
+      "label": "Reference",
+      "value": "433891004642"
+    },
+    {
+      "field": "datetime",
+      "label": "Date:",
+      "value": "19 Sep 2026 01:37 PM"
+    },
+    {
+      "field": "note",
+      "label": "Note",
+      "value": "Living Expenses"
+    }
+  ],
+  "unmapped": [
+    {
+      "text": "Transaction Successful",
+      "type": null
+    },
+    {
+      "text": "POWERED BY",
+      "type": null
+    }
+  ],
+  "ocr_lines": [
+    "Transaction Successful",
+    "1,000 EGP",
+    "Transfer Amount",
+    "From",
+    "muhammedd002@instapay",
+    "محمد عادل توفيق محمد",
+    "To Mobile Wallet",
+    "Mahmoud F A*********",
+    "01080719837",
+    "Reference",
+    "433891004642",
+    "19 Sep 2026 01:37 PM",
+    "Date:",
+    "Living Expenses",
+    "Note",
+    "POWERED BY"
+  ]
+}
