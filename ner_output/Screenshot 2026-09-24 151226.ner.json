@@ -1,0 +1,62 @@
+{
+  "image": "C:\\Users\\Karim\\Desktop\\money-transaction\\synthetic\\Screenshot 2026-09-24 151226.png",
+  "text": "Transaction Successful\n1,000 EGP\nTransfer Amount\nFrom\nmuhammedd002@instapay\nمحمد عادل توفيق محمد\nTo Mobile Wallet\nMahmoud F A*********\n01080719837\nReference\n433891004642\nDate:\n19 Sep 2026 01:37 PM\nNote\nLiving Expenses\nPOWERED BY",
+  "entities": [
+    {
+      "label": "MONEY",
+      "start": 23,
+      "end": 32,
+      "score": 1.0,
+      "source": "regex",
+      "text": "1,000 EGP"
+    },
+    {
+      "label": "EMAIL",
+      "start": 54,
+      "end": 75,
+      "score": 1.0,
+      "source": "regex",
+      "text": "muhammedd002@instapay"
+    },
+    {
+      "label": "PERSON",
+      "start": 76,
+      "end": 96,
+      "score": 0.9845,
+      "source": "model",
+      "text": "محمد عادل توفيق محمد"
+    },
+    {
+      "label": "PERSON",
+      "start": 114,
+      "end": 121,
+      "score": 1.0,
+      "source": "model",
+      "text": "Mahmoud"
+    },
+    {
+      "label": "PHONE",
+      "start": 135,
+      "end": 146,
+      "score": 1.0,
+      "source": "regex",
+      "text": "01080719837"
+    },
+    {
+      "label": "REFERENCE",
+      "start": 157,
+      "end": 169,
+      "score": 1.0,
+      "source": "regex",
+      "text": "433891004642"
+    },
+    {
+      "label": "DATE",
+      "start": 176,
+      "end": 196,
+      "score": 1.0,
+      "source": "regex",
+      "text": "19 Sep 2026 01:37 PM"
+    }
+  ]
+}

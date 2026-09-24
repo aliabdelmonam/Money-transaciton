@@ -24,9 +24,9 @@ def extract_text(ocr, image_path):
     )
 
 
-def main():
+def create_ocr():
     # enable_mkldnn=False works around a oneDNN crash in paddlepaddle 3.3 on CPU
-    ocr = PaddleOCR(
+    return PaddleOCR(
         lang="ar",
         ocr_version="PP-OCRv5",
         use_doc_orientation_classify=False,
@@ -34,6 +34,10 @@ def main():
         use_textline_orientation=True,
         enable_mkldnn=False,
     )
+
+
+def main():
+    ocr = create_ocr()
     for image_path in sorted(p for p in SYNTHETIC_DIR.iterdir() if p.suffix.lower() in IMAGE_EXTS):
         text = extract_text(ocr, image_path)
         image_path.with_suffix(".paddleocr.txt").write_text(text, encoding="utf-8")

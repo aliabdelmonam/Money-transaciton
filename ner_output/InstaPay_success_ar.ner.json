@@ -1,0 +1,78 @@
+{
+  "image": "synthetic\\InstaPay_success_ar.jpg",
+  "text": "Transaction Details\n45\nEGP\nTransfer Amount\nFrom\nعمر محمود\nCIB 123-456-789-0\nTo\nYoussef El-Din\nNBE 987-654-321-A\nReference\nPAY-REF-23092026-OMY-YE\nDate:\n23 Sep 2026 03:54 PM\nNote\nLiving Expenses\nPOWERED BY",
+  "entities": [
+    {
+      "label": "MONEY",
+      "start": 20,
+      "end": 26,
+      "score": 1.0,
+      "source": "regex",
+      "text": "45 EGP"
+    },
+    {
+      "label": "PERSON",
+      "start": 48,
+      "end": 57,
+      "score": 1.0,
+      "source": "model",
+      "text": "عمر محمود"
+    },
+    {
+      "label": "BANK",
+      "start": 58,
+      "end": 61,
+      "score": 1.0,
+      "source": "regex",
+      "text": "CIB"
+    },
+    {
+      "label": "ACCOUNT_NUMBER",
+      "start": 62,
+      "end": 75,
+      "score": 1.0,
+      "source": "regex",
+      "text": "123-456-789-0"
+    },
+    {
+      "label": "PERSON",
+      "start": 79,
+      "end": 93,
+      "score": 1.0,
+      "source": "model",
+      "text": "Youssef El-Din"
+    },
+    {
+      "label": "BANK",
+      "start": 94,
+      "end": 97,
+      "score": 1.0,
+      "source": "regex",
+      "text": "NBE"
+    },
+    {
+      "label": "ACCOUNT_NUMBER",
+      "start": 98,
+      "end": 111,
+      "score": 1.0,
+      "source": "regex",
+      "text": "987-654-321-A"
+    },
+    {
+      "label": "REFERENCE",
+      "start": 122,
+      "end": 145,
+      "score": 1.0,
+      "source": "regex",
+      "text": "PAY-REF-23092026-OMY-YE"
+    },
+    {
+      "label": "DATE",
+      "start": 152,
+      "end": 172,
+      "score": 1.0,
+      "source": "regex",
+      "text": "23 Sep 2026 03:54 PM"
+    }
+  ]
+}
