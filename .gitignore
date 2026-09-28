@@ -4,6 +4,10 @@ __pycache__/
 *.pyc
 # Distribution / packaging
 .Python
+
+__pycache__/
+*.py[cod]
+
 build/
 develop-eggs/
 dist/
@@ -21,3 +25,5 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+output/
