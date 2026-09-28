@@ -5,11 +5,14 @@ from typing import Iterator, Optional
 from channels.events.base import ChannelEvent
 from channels.events.messages import ImageMessageReceived, MessageDelivered, MessageRead
 from channels.models.attachment import Attachment, AttachmentType
+from channels.models.outgoing import OutgoingMessage
 from channels.models.user import User
+from channels.services.mapper import SendRequest
 
 logger = logging.getLogger(__name__)
 
 CHANNEL = "whatsapp"
+MAX_TEXT_LENGTH = 4096
 
 
 class WhatsAppMessageMapper:
@@ -17,7 +20,23 @@ class WhatsAppMessageMapper:
 
     Only image messages are mapped; every other message type (text,
     audio, video, document, location, ...) is ignored and yields ``None``.
+    Outgoing messages are mapped to text sends on the ``/messages`` endpoint.
     """
+
+    def to_requests(self, message: OutgoingMessage) -> list[SendRequest]:
+        requests = []
+        for index, chunk in enumerate(self._chunks(message.text)):
+            payload = {
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": message.conversation_id,
+                "type": "text",
+                "text": {"body": chunk, "preview_url": message.preview_url},
+            }
+            if message.reply_to_message_id and index == 0:
+                payload["context"] = {"message_id": message.reply_to_message_id}
+            requests.append(SendRequest(path="/messages", payload=payload))
+        return requests
 
     def to_event(self, payload: dict) -> Optional[ChannelEvent]:
         for value in self._values(payload):
@@ -116,6 +135,23 @@ class WhatsAppMessageMapper:
             return datetime.fromtimestamp(int(raw), tz=timezone.utc).isoformat()
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _chunks(text: str) -> list[str]:
+        """Split text into pieces within WhatsApp's body limit, preferring line breaks."""
+        text = text.strip()
+        chunks = []
+        while len(text) > MAX_TEXT_LENGTH:
+            cut = text.rfind("\n", 0, MAX_TEXT_LENGTH)
+            if cut <= 0:
+                cut = text.rfind(" ", 0, MAX_TEXT_LENGTH)
+            if cut <= 0:
+                cut = MAX_TEXT_LENGTH
+            chunks.append(text[:cut].rstrip())
+            text = text[cut:].lstrip()
+        if text:
+            chunks.append(text)
+        return chunks
 
     @staticmethod
     def _extension(mime_type: Optional[str]) -> str:

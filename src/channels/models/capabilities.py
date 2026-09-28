@@ -4,6 +4,7 @@ from typing import Iterator
 
 class Capability(str, Enum):
     IMAGE = "image"
+    SEND_TEXT = "send_text"
 
 class Capabilities:
     def __init__(self, *capabilities: Capability):

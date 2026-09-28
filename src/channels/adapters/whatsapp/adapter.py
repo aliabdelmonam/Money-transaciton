@@ -4,12 +4,14 @@ from typing import Optional
 import httpx
 
 from channels.adapters.whatsapp.mapper import WhatsAppMessageMapper
+from channels.adapters.whatsapp.sender import WhatsAppSender
 from channels.events.base import ChannelEvent
 from channels.models.attachment import Attachment
 from channels.models.capabilities import Capabilities, Capability
 from channels.models.exceptions import MediaTooLargeError
 from channels.models.health import ChannelHealth
 from channels.models.media import InboundMedia
+from channels.models.outgoing import OutgoingMessage
 from channels.registry import register_channel
 from channels.services.health import http_probe
 from channels.services.media import DEFAULT_MAX_BYTES
@@ -20,17 +22,19 @@ logger = logging.getLogger(__name__)
 
 @register_channel("whatsapp")
 class WhatsappAdapter:
-    """Inbound-only WhatsApp Cloud API adapter that accepts image messages.
+    """WhatsApp Cloud API adapter that accepts image messages and replies with text.
 
-    Nothing is sent back to the user; the adapter only verifies webhooks,
-    parses incoming images into events and downloads their bytes.
+    The adapter verifies webhooks, parses incoming images into events,
+    downloads their bytes and sends text messages back to the user.
     """
 
     name = "whatsapp"
     mapper_class = WhatsAppMessageMapper
+    sender_class = WhatsAppSender
     webhook_scheme = "hmac_sha256"
     capabilities = Capabilities(
         Capability.IMAGE,
+        Capability.SEND_TEXT,
     )
 
     def __init__(
@@ -38,10 +42,12 @@ class WhatsappAdapter:
         webhook: WebhookService,
         client: httpx.AsyncClient,
         config,
+        sender: WhatsAppSender,
         max_media_bytes: int = DEFAULT_MAX_BYTES,
     ):
         self._webhook = webhook
         self._client = client
+        self._sender = sender
         self._verify_token = config.verify_token
         self._api_root = f"{config.api_base}/{config.api_version}"
         self._max_media_bytes = max_media_bytes
@@ -50,6 +56,10 @@ class WhatsappAdapter:
     @staticmethod
     def base_url(config) -> str:
         return f"{config.api_base}/{config.api_version}/{config.phone_number_id}"
+
+    async def send(self, message: OutgoingMessage) -> Optional[str]:
+        """Send a text message; returns the WhatsApp message id (``wamid``)."""
+        return await self._sender.send(message)
 
     async def fetch_media(self, attachment: Attachment) -> Optional[InboundMedia]:
         """Download inbound media via WhatsApp's two-step flow.
