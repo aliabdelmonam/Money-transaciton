@@ -14,7 +14,7 @@ class _Settings(BaseSettings):
         extra="ignore",
     )
 
-    project_id: str = Field()
+    project_id: str = "money-transaction"
     public_base_url: str = "http://localhost:8000"
     host: str = "0.0.0.0"
     port: int = 8000
@@ -26,6 +26,7 @@ class _Settings(BaseSettings):
     inbound_media_dir: Path = Path("data/inbound_media")
     inbound_media_url_path: str = "/media/inbound"
     inbound_media_max_bytes: int = 20 * 1024 * 1024
+    ocr_enabled: bool = True
     channels: _ChannelsSettings = Field(default_factory=_ChannelsSettings)
 
 

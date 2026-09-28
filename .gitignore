@@ -1,5 +1,6 @@
 /money_transaction
 *.txt
+!requirements.txt
 __pycache__/
 *.pyc
 # Distribution / packaging
@@ -23,3 +24,5 @@ share/python-wheels/
 MANIFEST
 
 .env
+# Runtime data (inbound WhatsApp media)
+data/

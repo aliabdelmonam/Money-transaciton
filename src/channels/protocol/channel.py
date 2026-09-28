@@ -1,5 +1,7 @@
-from typing import Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
+from channels.models.attachment import Attachment
+from channels.models.media import InboundMedia
 from channels.models.outgoing import OutgoingMessage
 
 @runtime_checkable
@@ -10,6 +12,4 @@ class Channel(Protocol):
 
     async def close(self)-> None: ...
 
-    async def download_media()-> bytes: ...
-
-    
+    async def fetch_media(self, attachment: Attachment)-> Optional[InboundMedia]: ...

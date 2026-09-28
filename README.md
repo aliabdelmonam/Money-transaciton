@@ -114,6 +114,27 @@ It works from the layout instead of per-app templates: labels are recognised fro
 Arabic/English vocabulary in `transaction_config.py` and paired with the value beside, below or
 above them. To support a new app or layout, add its label wording, provider name or bank there.
 
+### WhatsApp bot (webhook API)
+
+Users send a receipt screenshot on WhatsApp and the bot replies with the extracted details.
+
+1. `pip install -r requirements.txt`, then copy `.env.example` to `.env` and fill in the values.
+2. Start the server from the project root:
+
+   ```bash
+   python -m uvicorn api.main:app --app-dir src --host 0.0.0.0 --port 8000
+   ```
+
+3. Expose it publicly (e.g. `ngrok http 8000`) and in the Meta dashboard set the callback URL to
+   `https://<public-host>/webhooks/whatsapp`, the verify token to `CHANNELS_WHATSAPP__VERIFY_TOKEN`,
+   and subscribe to the `messages` field.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /webhooks/whatsapp` | Meta's verification handshake (`hub.challenge`) |
+| `POST /webhooks/whatsapp` | Incoming updates; signature checked with `CHANNELS_WHATSAPP__WEBHOOK_SECRET` |
+| `GET /health` / `GET /health/whatsapp` | Liveness / Graph API token check |
+
 ### Comparing OCR engines
 
 Each OCR engine has its own script. Run them individually or all together to compare results.
