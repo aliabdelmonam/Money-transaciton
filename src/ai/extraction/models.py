@@ -11,7 +11,8 @@ class Party:
     name: Optional[str] = None
     name_alt: Optional[str] = None      # e.g. Arabic + English name of the same person
     phone: Optional[str] = None
-    email: Optional[str] = None
+    mail: Optional[str] = None
+    wallet_id: Optional[str] = None     # e.g. InstaPay address (name@instapay) or wallet number
     bank: Optional[str] = None
     account_type: Optional[str] = None
 
@@ -30,10 +31,11 @@ class Receipt:
     fees: Optional[float] = None
     total: Optional[float] = None
     currency: Optional[str] = None
-    reference: Optional[str] = None
+    reference_id: Optional[str] = None
     date: Optional[str] = None          # raw text as read
     date_iso: Optional[str] = None
-    note: Optional[str] = None
+    notes: Optional[str] = None
+    other_data: dict = field(default_factory=dict)      # anything read that has no dedicated field
     other_phones: list[str] = field(default_factory=list)
     derived: list[str] = field(default_factory=list)    # fields computed, not read
     warnings: list[str] = field(default_factory=list)

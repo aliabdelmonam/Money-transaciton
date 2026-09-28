@@ -17,8 +17,8 @@ from .imaging.debug import draw_debug
 from .pipeline import ReceiptPipeline
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
-CSV_COLUMNS = ["file", "provider", "status", "amount", "fees", "total", "currency", "reference",
-               "date", "date_iso", "note",
+CSV_COLUMNS = ["file", "provider", "status", "amount", "fees", "total", "currency", "reference_id",
+               "date", "date_iso", "notes", "other_data",
                *(f"{side}_{k}" for side in ("sender", "receiver") for k in Party.keys()),
                "other_phones", "derived", "warnings"]
 
@@ -30,6 +30,7 @@ def flatten(res: dict) -> dict:
             row[f"{side}_{k}"] = res[side].get(k)
     for k in ("other_phones", "derived", "warnings"):
         row[k] = " | ".join(res.get(k) or [])
+    row["other_data"] = json.dumps(res.get("other_data") or {}, ensure_ascii=False)
     return row
 
 
@@ -72,7 +73,7 @@ def main() -> None:
             draw_debug(analysis.image, analysis.tokens, os.path.join(args.output, "debug", name + ".png"))
         r = analysis.receipt
         log.info("[%d/%d] %s: %s | amount=%s ref=%s | from=%s -> to=%s", i, len(files), name, r.provider,
-                 r.amount, r.reference, r.sender.name or r.sender.phone, r.receiver.name or r.receiver.phone)
+                 r.amount, r.reference_id, r.sender.name or r.sender.phone, r.receiver.name or r.receiver.phone)
 
     summary = [{k: v for k, v in r.items() if k != "tokens"} for r in results]
     with open(os.path.join(args.output, "all_results.json"), "w", encoding="utf-8") as f:

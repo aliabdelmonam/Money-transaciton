@@ -177,7 +177,7 @@ class _ParseRun:
                 if find_phone([text]):
                     info.phone = find_phone([text])
                 elif find_email([text]):
-                    info.email = find_email([text])
+                    info.mail = find_email([text])
                 else:
                     info.account_type = text
             extra += anchor.before
@@ -186,7 +186,7 @@ class _ParseRun:
         for t in toks:
             texts = [t.text, *t.alts]
             if em := find_email(texts):
-                info.email = info.email or em
+                info.mail = info.mail or em
                 t.role = side + "_email"
                 continue
             if ph := find_phone(texts):
@@ -289,7 +289,7 @@ class _ParseRun:
                     break
         for it in kv.get("reference", []):
             if ref := parse_reference(it.candidates()):
-                self.r.reference = ref
+                self.r.reference_id = ref
                 break
         for it in kv.get("date", []):
             for c in it.candidates():
@@ -305,7 +305,7 @@ class _ParseRun:
                     self.r.date, self.r.date_iso = txt, iso
                     break
         if kv.get("note"):
-            self.r.note = clean_text(kv["note"][0].value)
+            self.r.notes = clean_text(kv["note"][0].value)
 
     def _headline_amount(self):
         if self.r.amount is not None:
