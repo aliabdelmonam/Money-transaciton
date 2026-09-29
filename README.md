@@ -135,6 +135,27 @@ Users send a receipt screenshot on WhatsApp and the bot replies with the extract
 | `POST /webhooks/whatsapp` | Incoming updates; signature checked with `CHANNELS_WHATSAPP__WEBHOOK_SECRET` |
 | `GET /health` / `GET /health/whatsapp` | Liveness / Graph API token check |
 
+### Database
+
+Async SQLAlchemy models live in `src/db/models/`, Alembic migrations in `src/db/migrations/`.
+The URL comes from `DATABASE_URL` (env or `.env`); the default is SQLite at `./data/smaia.db`.
+
+| Table | Holds |
+| --- | --- |
+| `users` | One row per person per channel (`channel` + `external_id`, e.g. the WhatsApp number) |
+| `messages` | Inbound and outbound messages; `(channel, provider_message_id)` is unique so retried webhooks are detected |
+| `attachments` | Media on a message: the image bytes (`data`), WhatsApp media id, mime type, `sha256` |
+| `transactions` | The transfer read from a receipt: provider, amount/fees/total, currency, reference, date, note, `other_data`, and the full extractor output in `raw_result` |
+| `transaction_parties` | Sender and receiver of a transaction: name, phone, email, account / wallet, bank |
+
+```bash
+alembic upgrade head                                   # create / update the schema
+alembic revision --autogenerate -m "add x to y"        # after changing a model, then review the file
+alembic downgrade -1                                   # undo the last migration
+alembic -x url=postgresql+asyncpg://... upgrade head   # target another database
+python -m pytest tests/db                              # includes a check that models and migrations match
+```
+
 ### Comparing OCR engines
 
 Each OCR engine has its own script. Run them individually or all together to compare results.
