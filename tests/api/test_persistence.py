@@ -2,43 +2,37 @@ from typing import Optional
 
 import pytest
 
-from api.persistence import RecordingChannel, RecordingResponder
+from api.persistence import RecordingResponder
+from api.receipts import TransactionReplyProvider
 from channels.events.messages import ImageMessageReceived, MessageDelivered
 from channels.models.attachment import Attachment, AttachmentType
-from channels.models.exceptions import ChannelError, MessageSendError
 from channels.models.media import InboundMedia
-from channels.models.outgoing import OutgoingMessage, SentMessage
+from channels.models.outgoing import SentMessage
 from channels.models.user import User
 
 MEDIA = InboundMedia(data=b"image-bytes", mime_type="image/jpeg")
+RESULT = {"amount": 9, "currency": "EGP", "receiver": {"phone": "01001496550"}}
 
 
 class FakeChannel:
     name = "whatsapp"
 
-    def __init__(self, fail_send: bool = False, fail_after_first_part: bool = False):
-        self.fail_send = fail_send
-        self.fail_after_first_part = fail_after_first_part
-        self.sent: list[OutgoingMessage] = []
-
-    async def send(self, message: OutgoingMessage) -> list[SentMessage]:
-        if self.fail_send:
-            raise ChannelError("connection refused")
-        if self.fail_after_first_part:
-            raise MessageSendError(
-                ChannelError("HTTP 500"), [SentMessage(text="part 1", provider_message_id="wamid.p1")], ["part 2", "part 3"]
-            )
-        self.sent.append(message)
-        return [SentMessage(text=message.text, provider_message_id=f"wamid.out{len(self.sent)}")]
+    def __init__(self, media: Optional[InboundMedia] = MEDIA):
+        self.media = media
 
     async def fetch_media(self, attachment: Attachment) -> Optional[InboundMedia]:
-        return MEDIA
+        return self.media
 
-    def verify(self, body: bytes, signature: Optional[str]) -> bool:
-        return True
 
-    async def close(self) -> None:
-        pass
+class FakeReader:
+    def __init__(self, result: Optional[dict] = None, error: Optional[Exception] = None):
+        self.result = result if result is not None else RESULT
+        self.error = error
+
+    async def read(self, data: bytes, filename: str) -> dict:
+        if self.error:
+            raise self.error
+        return self.result
 
 
 class FakeStore:
@@ -52,22 +46,18 @@ class FakeStore:
         if self.fail:
             raise RuntimeError("database is locked")
 
-    async def record_inbound(self, event):
-        await self._call("inbound", event.provider_message_id)
+    async def record_received(self, event):
+        await self._call("received", event.provider_message_id)
         if event.provider_message_id in self.seen:
             return None
         self.seen.add(event.provider_message_id)
         return len(self.seen)
 
-    async def save_media(self, channel, attachment, media):
-        await self._call("media", channel, attachment.ref, media.data)
+    async def record_result(self, event, media, result):
+        await self._call("result", event.provider_message_id, media.data, result)
 
-    async def record_outbound(self, channel, message, sent, unsent=(), error=None):
-        parts = [(part.text, part.provider_message_id) for part in sent]
-        await self._call("outbound", channel, parts, list(unsent), error)
-
-    async def record_status(self, event):
-        await self._call("status", event.message_id)
+    async def record_failure(self, event, error, media=None):
+        await self._call("failure", event.provider_message_id, error, media and media.data)
 
 
 class FakeResponder:
@@ -89,52 +79,6 @@ def image_event(message_id: str = "wamid.in1") -> ImageMessageReceived:
     )
 
 
-async def test_channel_records_sent_messages():
-    store = FakeStore()
-    channel = RecordingChannel(FakeChannel(), store)
-    sent = await channel.send(OutgoingMessage(conversation_id="2010", text="hi"))
-    assert [part.provider_message_id for part in sent] == ["wamid.out1"]
-    assert store.calls == [("outbound", "whatsapp", [("hi", "wamid.out1")], [], None)]
-
-
-async def test_channel_records_failed_send_and_reraises():
-    store = FakeStore()
-    channel = RecordingChannel(FakeChannel(fail_send=True), store)
-    with pytest.raises(ChannelError):
-        await channel.send(OutgoingMessage(conversation_id="2010", text="hi"))
-    assert store.calls == [("outbound", "whatsapp", [], ["hi"], "connection refused")]
-
-
-async def test_channel_keeps_parts_sent_before_a_failure():
-    store = FakeStore()
-    channel = RecordingChannel(FakeChannel(fail_after_first_part=True), store)
-    with pytest.raises(MessageSendError):
-        await channel.send(OutgoingMessage(conversation_id="2010", text="part 1 part 2 part 3"))
-    assert store.calls == [
-        ("outbound", "whatsapp", [("part 1", "wamid.p1")], ["part 2", "part 3"], "HTTP 500")
-    ]
-
-
-async def test_channel_saves_downloaded_media():
-    store = FakeStore()
-    channel = RecordingChannel(FakeChannel(), store)
-    attachment = Attachment(type=AttachmentType.IMAGE, ref="media-1")
-    assert await channel.fetch_media(attachment) is MEDIA
-    assert store.calls == [("media", "whatsapp", "media-1", b"image-bytes")]
-
-
-async def test_channel_keeps_working_when_the_database_fails():
-    inner = FakeChannel()
-    channel = RecordingChannel(inner, FakeStore(fail=True))
-    assert len(await channel.send(OutgoingMessage(conversation_id="2010", text="hi"))) == 1
-    assert await channel.fetch_media(Attachment(type=AttachmentType.IMAGE, ref="m")) is MEDIA
-    assert len(inner.sent) == 1
-
-
-async def test_channel_forwards_adapter_methods():
-    assert RecordingChannel(FakeChannel(), FakeStore()).verify(b"", None) is True
-
-
 async def test_responder_skips_redelivered_messages():
     store, inner = FakeStore(), FakeResponder()
     responder = RecordingResponder(inner, store)
@@ -143,15 +87,40 @@ async def test_responder_skips_redelivered_messages():
     assert len(inner.handled) == 1
 
 
-async def test_responder_records_status_without_answering():
+async def test_responder_stores_nothing_for_status_updates():
     store, inner = FakeStore(), FakeResponder()
     event = MessageDelivered(channel="whatsapp", conversation_id="2010", message_id="wamid.out1")
-    assert await RecordingResponder(inner, store).handle(event) == []
-    assert store.calls == [("status", "wamid.out1")]
-    assert inner.handled == []
+    await RecordingResponder(inner, store).handle(event)
+    assert store.calls == []
 
 
 async def test_responder_still_answers_when_the_database_fails():
     inner = FakeResponder()
     assert len(await RecordingResponder(inner, FakeStore(fail=True)).handle(image_event())) == 1
     assert len(inner.handled) == 1
+
+
+async def test_provider_stores_the_image_and_result():
+    store = FakeStore()
+    text = await TransactionReplyProvider(FakeChannel(), FakeReader(), store).reply(image_event())
+    assert "Amount: 9 EGP" in text
+    assert store.calls == [("result", "wamid.in1", b"image-bytes", RESULT)]
+
+
+async def test_provider_still_replies_when_the_database_fails():
+    text = await TransactionReplyProvider(FakeChannel(), FakeReader(), FakeStore(fail=True)).reply(image_event())
+    assert "Amount: 9 EGP" in text
+
+
+async def test_provider_records_a_failed_download():
+    store = FakeStore()
+    assert await TransactionReplyProvider(FakeChannel(media=None), FakeReader(), store).reply(image_event()) is None
+    assert store.calls == [("failure", "wamid.in1", "could not download media", None)]
+
+
+async def test_provider_records_an_ocr_error_and_reraises():
+    store = FakeStore()
+    provider = TransactionReplyProvider(FakeChannel(), FakeReader(error=RuntimeError("ocr crashed")), store)
+    with pytest.raises(RuntimeError):
+        await provider.reply(image_event())
+    assert store.calls == [("failure", "wamid.in1", "RuntimeError('ocr crashed')", b"image-bytes")]

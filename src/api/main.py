@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 
 import channels.adapters.whatsapp.adapter  # noqa: F401  registers the "whatsapp" channel
-from api.persistence import RecordingChannel, RecordingResponder
+from api.persistence import RecordingResponder
 from api.receipts import ReceiptReader, TransactionReplyProvider
 from api.routes import health, whatsapp
 from api.security import require_api_key
@@ -21,8 +21,8 @@ from channels.events.messages import ImageMessageReceived
 from channels.registry import channel_registry
 from channels.services import ChatbotResponder, FallbackReplyProvider, StaticReplyProvider
 from db import Database
-from db.messages import MessageStore
 from db.migrate import upgrade as upgrade_database
+from db.transactions import TransactionStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -42,11 +42,8 @@ async def lifespan(app: FastAPI):
     if settings.database_migrate_on_startup:
         await asyncio.to_thread(upgrade_database, settings.database_url)
     database = Database(settings.database_url)
-    store = MessageStore(database)
-    channel = RecordingChannel(
-        ChannelBuilder(settings.channels).build("whatsapp", channel_registry.get("whatsapp")),
-        store,
-    )
+    store = TransactionStore(database)
+    channel = ChannelBuilder(settings.channels).build("whatsapp", channel_registry.get("whatsapp"))
 
     providers = []
     reader = None
@@ -54,7 +51,7 @@ async def lifespan(app: FastAPI):
         reader = ReceiptReader(settings.inbound_media_dir)
         logger.info("loading OCR models...")
         await reader.start()
-        providers.append(TransactionReplyProvider(channel, reader, settings.ocr_max_concurrent))
+        providers.append(TransactionReplyProvider(channel, reader, store, settings.ocr_max_concurrent))
     providers.append(StaticReplyProvider({ImageMessageReceived: FALLBACK_REPLY}))
 
     app.state.whatsapp = channel

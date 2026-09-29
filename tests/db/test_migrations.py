@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, inspect
 import db.models  # noqa: F401
 from db.base import Base
 
-TABLES = {"users", "messages", "attachments", "transactions", "transaction_parties"}
+TABLES = {"transactions"}
 
 
 def sync_url(url: str) -> str:
@@ -34,7 +34,7 @@ def test_downgrade_then_upgrade(migrated_url, make_alembic_config):
     assert set(inspect(engine).get_table_names()) == {"alembic_version"}
 
     command.upgrade(config, "head")
-    assert TABLES <= set(inspect(engine).get_table_names())
+    assert set(inspect(engine).get_table_names()) == TABLES | {"alembic_version"}
     engine.dispose()
 
 

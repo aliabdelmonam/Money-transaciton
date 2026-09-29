@@ -5,9 +5,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from api.persistence import record
 from channels.events.base import ChannelEvent
 from channels.events.messages import ImageMessageReceived
 from channels.protocol.channel import Channel
+from db.transactions import KEY_FIELDS, TransactionStore
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,6 @@ SUMMARY_FIELDS = (
     ("note", "Note"),
 )
 MONEY_FIELDS = ("amount", "fees", "total")
-# Without at least one of these the OCR found nothing that looks like a transaction.
-KEY_FIELDS = ("amount", "total", "reference")
 
 
 class ReceiptReader:
@@ -72,11 +72,14 @@ class ReceiptReader:
 
 
 class TransactionReplyProvider:
-    """Reply to a receipt image with the transaction details read from it."""
+    """Reply to a receipt image with the transaction details read from it, and store them."""
 
-    def __init__(self, channel: Channel, reader: ReceiptReader, max_concurrent: int = 2):
+    def __init__(
+        self, channel: Channel, reader: ReceiptReader, store: TransactionStore, max_concurrent: int = 2
+    ):
         self._channel = channel
         self._reader = reader
+        self._store = store
         # OCR itself is serial (one worker thread); this bounds how many images are
         # downloaded and held in memory while waiting for it.
         self._slots = asyncio.Semaphore(max_concurrent)
@@ -88,9 +91,15 @@ class TransactionReplyProvider:
             media = await self._channel.fetch_media(event.attachment)
             if media is None:
                 logger.warning("could not download media for message %s", event.provider_message_id)
+                await record("transaction", self._store.record_failure(event, "could not download media"))
                 return None
-            result = await self._reader.read(media.data, media.filename or "receipt")
+            try:
+                result = await self._reader.read(media.data, media.filename or "receipt")
+            except Exception as error:
+                await record("transaction", self._store.record_failure(event, repr(error), media))
+                raise
         logger.info("extracted transaction from %s: %s", event.provider_message_id, result)
+        await record("transaction", self._store.record_result(event, media, result))
         return format_transaction(result)
 
 

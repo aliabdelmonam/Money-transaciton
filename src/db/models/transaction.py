@@ -1,123 +1,90 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Index, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base, Money, TimestampMixin, str_enum
 
-if TYPE_CHECKING:
-    from db.models.attachment import Attachment
-    from db.models.user import User
-
 
 class ExtractionStatus(str, Enum):
-    PENDING = "pending"         # image stored, OCR not finished
+    PENDING = "pending"         # image received, OCR not finished
     EXTRACTED = "extracted"     # found at least one key field (amount / total / reference)
     NO_DATA = "no_data"         # OCR ran but nothing looked like a transaction
-    FAILED = "failed"           # OCR or parsing raised; see ``error``
-
-
-class PartyRole(str, Enum):
-    SENDER = "sender"
-    RECEIVER = "receiver"
+    FAILED = "failed"           # download, OCR or parsing failed; see ``error``
 
 
 class Transaction(TimestampMixin, Base):
-    """A money transfer read from a receipt screenshot.
+    """One receipt image a user sent, and the transaction read from it.
 
-    Typed columns hold the fields worth querying; ``raw_result`` keeps the
-    full extractor output (evidence, OCR lines, warnings) for audits and
-    for re-parsing when the extractor improves.
+    The only table: who sent the image and when (from the channel), the
+    image itself, and the extracted fields. ``(channel, message_id)`` is
+    unique, so a webhook delivery that Meta retries is detected and not
+    OCR'd twice. ``other_data`` holds fields read that have no column;
+    ``raw_result`` the full extractor output, for audits and re-parsing.
     """
 
     __tablename__ = "transactions"
     __table_args__ = (
+        UniqueConstraint("channel", "message_id"),
         # Same receipt submitted twice (or by two users) -> same provider + reference.
-        Index("ix_transactions_provider_reference", "provider", "reference"),
+        Index("ix_transactions_provider_reference", "provider", "reference_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    # One receipt per image. Nullable so a transaction can also be entered by hand.
-    attachment_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("attachments.id", ondelete="SET NULL"), unique=True
-    )
+
+    # ---- from the channel: who sent the image, and when
+    channel: Mapped[str] = mapped_column(String(32))
+    message_id: Mapped[Optional[str]] = mapped_column(String(128))     # WhatsApp wamid
+    user_phone: Mapped[str] = mapped_column(String(64), index=True)    # WhatsApp wa_id of the user
+    user_name: Mapped[Optional[str]] = mapped_column(String(255))      # their WhatsApp profile name
+    received_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+
+    # ---- the image. Deferred, so listing transactions never loads the bytes;
+    # load them with ``options(undefer(Transaction.image))``.
+    image: Mapped[Optional[bytes]] = mapped_column(LargeBinary, deferred=True)
+    image_mime_type: Mapped[Optional[str]] = mapped_column(String(64))
+    image_filename: Mapped[Optional[str]] = mapped_column(String(255))
+    image_size: Mapped[Optional[int]] = mapped_column(Integer)
+    # Same screenshot sent twice -> same hash; indexed for duplicate-receipt checks.
+    image_sha256: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+
+    # ---- read from the image
     extraction_status: Mapped[ExtractionStatus] = mapped_column(
         str_enum(ExtractionStatus), default=ExtractionStatus.PENDING, index=True
     )
-    ocr_engine: Mapped[Optional[str]] = mapped_column(String(32))     # paddle | tesseract | easyocr
-
-    provider: Mapped[Optional[str]] = mapped_column(String(64))       # InstaPay, Vodafone Cash, ...
-    transfer_status: Mapped[Optional[str]] = mapped_column(String(32))  # success | failed, as printed
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    provider: Mapped[Optional[str]] = mapped_column(String(64))         # InstaPay, Vodafone Cash, ...
+    transfer_status: Mapped[Optional[str]] = mapped_column(String(32))  # success | pending | failed
     transfer_type: Mapped[Optional[str]] = mapped_column(String(64))
     amount: Mapped[Optional[Decimal]] = mapped_column(Money)
     fees: Mapped[Optional[Decimal]] = mapped_column(Money)
     total: Mapped[Optional[Decimal]] = mapped_column(Money)
-    currency: Mapped[Optional[str]] = mapped_column(String(3))        # ISO 4217, e.g. EGP
-    reference: Mapped[Optional[str]] = mapped_column(String(128))
-    occurred_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
-    occurred_at_raw: Mapped[Optional[str]] = mapped_column(String(64))  # date text as read
-    note: Mapped[Optional[str]] = mapped_column(Text)
-    other_data: Mapped[Optional[dict[str, Any]]]    # fields read that have no column (Receipt.other_data)
+    currency: Mapped[Optional[str]] = mapped_column(String(3))          # ISO 4217, e.g. EGP
+    reference_id: Mapped[Optional[str]] = mapped_column(String(128))
+    date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
 
+    sender_name: Mapped[Optional[str]] = mapped_column(String(255))
+    sender_phone: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    sender_email: Mapped[Optional[str]] = mapped_column(String(255))
+    sender_account: Mapped[Optional[str]] = mapped_column(String(128))  # bank account, IPA handle, card
+    sender_bank: Mapped[Optional[str]] = mapped_column(String(64))
+
+    receiver_name: Mapped[Optional[str]] = mapped_column(String(255))
+    receiver_phone: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    receiver_email: Mapped[Optional[str]] = mapped_column(String(255))
+    receiver_account: Mapped[Optional[str]] = mapped_column(String(128))
+    receiver_bank: Mapped[Optional[str]] = mapped_column(String(64))
+
+    other_data: Mapped[Optional[dict[str, Any]]]
     raw_result: Mapped[Optional[dict[str, Any]]]
-    error: Mapped[Optional[str]] = mapped_column(Text)
-
-    user: Mapped["User"] = relationship(back_populates="transactions")
-    attachment: Mapped[Optional["Attachment"]] = relationship(back_populates="transaction")
-    parties: Mapped[list["TransactionParty"]] = relationship(
-        back_populates="transaction",
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-        lazy="selectin",
-    )
-
-    def party(self, role: PartyRole) -> Optional["TransactionParty"]:
-        return next((p for p in self.parties if p.role == role), None)
-
-    @property
-    def sender(self) -> Optional["TransactionParty"]:
-        return self.party(PartyRole.SENDER)
-
-    @property
-    def receiver(self) -> Optional["TransactionParty"]:
-        return self.party(PartyRole.RECEIVER)
 
     def __repr__(self) -> str:
         return (
             f"Transaction(id={self.id!r}, provider={self.provider!r}, amount={self.amount!r}, "
-            f"currency={self.currency!r}, reference={self.reference!r})"
+            f"currency={self.currency!r}, reference_id={self.reference_id!r})"
         )
-
-
-class TransactionParty(Base):
-    """The sender or receiver side of a transaction.
-
-    Covers both extractor outputs: ``account`` holds a bank account number,
-    wallet number or InstaPay address (``wallet_id`` / ``account``), and
-    ``account_type`` the channel it went through (``account_type`` / ``via``,
-    e.g. "Mobile Wallet"). Anything else read for the party goes in ``extra``.
-    """
-
-    __tablename__ = "transaction_parties"
-    __table_args__ = (UniqueConstraint("transaction_id", "role"),)
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id", ondelete="CASCADE"))
-    role: Mapped[PartyRole] = mapped_column(str_enum(PartyRole))
-    name: Mapped[Optional[str]] = mapped_column(String(255))
-    name_alt: Mapped[Optional[str]] = mapped_column(String(255))   # e.g. the Arabic spelling
-    phone: Mapped[Optional[str]] = mapped_column(String(32), index=True)
-    email: Mapped[Optional[str]] = mapped_column(String(255))
-    account: Mapped[Optional[str]] = mapped_column(String(128), index=True)
-    bank: Mapped[Optional[str]] = mapped_column(String(64))
-    account_type: Mapped[Optional[str]] = mapped_column(String(64))
-    extra: Mapped[Optional[dict[str, Any]]]
-
-    transaction: Mapped["Transaction"] = relationship(back_populates="parties")
-
-    def __repr__(self) -> str:
-        return f"TransactionParty(role={self.role.value!r}, name={self.name!r}, account={self.account!r})"
