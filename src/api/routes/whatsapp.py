@@ -5,8 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 
+from api.persistence import RecordingResponder
 from channels.events.base import ChannelEvent
-from channels.services.reply import ChatbotResponder
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ async def receive_update(
     return {"status": "ok"}
 
 
-async def _handle(responder: ChatbotResponder, event: ChannelEvent) -> None:
+async def _handle(responder: RecordingResponder, event: ChannelEvent) -> None:
     try:
         await responder.handle(event)
     except Exception:

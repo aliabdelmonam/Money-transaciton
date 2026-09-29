@@ -19,6 +19,7 @@ class _Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     database_url: str = Field(default="sqlite+aiosqlite:///./data/smaia.db")
+    database_migrate_on_startup: bool = True
     message_debounce_seconds: float = 5.0
     message_debounce_max_wait_seconds: float = 20.0
     generated_media_dir: Path = Path("data/generated_media")
