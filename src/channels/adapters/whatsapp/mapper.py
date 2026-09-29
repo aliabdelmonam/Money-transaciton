@@ -35,7 +35,7 @@ class WhatsAppMessageMapper:
             }
             if message.reply_to_message_id and index == 0:
                 payload["context"] = {"message_id": message.reply_to_message_id}
-            requests.append(SendRequest(path="/messages", payload=payload))
+            requests.append(SendRequest(path="/messages", payload=payload, text=chunk))
         return requests
 
     def to_event(self, payload: dict) -> Optional[ChannelEvent]:

@@ -3,6 +3,7 @@
 import hashlib
 import logging
 from datetime import datetime, timezone
+from collections.abc import Sequence
 from typing import Optional, Union
 
 from sqlalchemy import select
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from channels.events.messages import ImageMessageReceived, MessageDelivered, MessageRead
 from channels.models.attachment import Attachment as ChannelAttachment
 from channels.models.media import InboundMedia
-from channels.models.outgoing import OutgoingMessage
+from channels.models.outgoing import OutgoingMessage, SentMessage
 from db.models import Attachment, Message, MessageDirection, MessageStatus, MessageType, User
 from db.session import Database
 
@@ -74,31 +75,49 @@ class MessageStore:
         self,
         channel: str,
         message: OutgoingMessage,
-        provider_message_id: Optional[str],
+        sent: Sequence[SentMessage],
+        unsent: Sequence[str] = (),
         error: Optional[str] = None,
-    ) -> int:
-        """Store a message the bot sent (or tried to send, when ``error`` is set)."""
+    ) -> list[int]:
+        """Store what the bot sent for ``message``: one row per WhatsApp message.
+
+        ``sent`` are the parts the provider accepted (stored as sent);
+        ``unsent`` the part that failed and every part after it (stored as
+        failed, with ``error``). Returns the row ids in part order.
+        """
+        parts = [(part.text, part.provider_message_id, False) for part in sent]
+        parts += [(text, None, True) for text in unsent]
+        if not parts:
+            return []
         async with self._database.session() as session:
             user = await _upsert_user(session, channel, message.conversation_id)
             reply_to = None
             if message.reply_to_message_id:
                 reply_to = await _find_message(session, channel, message.reply_to_message_id)
-            row = Message(
-                user=user,
-                channel=channel,
-                conversation_id=message.conversation_id,
-                direction=MessageDirection.OUTBOUND,
-                type=MessageType.TEXT,
-                status=MessageStatus.FAILED if error else MessageStatus.SENT,
-                provider_message_id=provider_message_id,
-                reply_to=reply_to,
-                text=message.text,
-                error=error,
-                sent_at=None if error else _now(),
-            )
-            session.add(row)
+            now = _now()
+            rows: list[Message] = []
+            for index, (text, provider_message_id, failed) in enumerate(parts):
+                rows.append(
+                    Message(
+                        user=user,
+                        channel=channel,
+                        conversation_id=message.conversation_id,
+                        direction=MessageDirection.OUTBOUND,
+                        type=MessageType.TEXT,
+                        status=MessageStatus.FAILED if failed else MessageStatus.SENT,
+                        provider_message_id=provider_message_id,
+                        # WhatsApp quotes the user's message on the first part only.
+                        reply_to=reply_to if index == 0 else None,
+                        part_of=rows[0] if index else None,
+                        part_index=index,
+                        text=text,
+                        error=(error or "not sent") if failed else None,
+                        sent_at=None if failed else now,
+                    )
+                )
+            session.add_all(rows)
             await session.flush()
-            return row.id
+            return [row.id for row in rows]
 
     async def record_status(self, event: StatusEvent) -> bool:
         """Apply a delivered/read receipt to the outbound message it refers to.

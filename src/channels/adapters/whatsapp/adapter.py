@@ -11,7 +11,7 @@ from channels.models.capabilities import Capabilities, Capability
 from channels.models.exceptions import MediaTooLargeError
 from channels.models.health import ChannelHealth
 from channels.models.media import InboundMedia
-from channels.models.outgoing import OutgoingMessage
+from channels.models.outgoing import OutgoingMessage, SentMessage
 from channels.registry import register_channel
 from channels.services.health import http_probe
 from channels.services.media import DEFAULT_MAX_BYTES
@@ -57,8 +57,8 @@ class WhatsappAdapter:
     def base_url(config) -> str:
         return f"{config.api_base}/{config.api_version}/{config.phone_number_id}"
 
-    async def send(self, message: OutgoingMessage) -> Optional[str]:
-        """Send a text message; returns the WhatsApp message id (``wamid``)."""
+    async def send(self, message: OutgoingMessage) -> list[SentMessage]:
+        """Send a text message; one ``SentMessage`` (with its ``wamid``) per part sent."""
         return await self._sender.send(message)
 
     async def fetch_media(self, attachment: Attachment) -> Optional[InboundMedia]:

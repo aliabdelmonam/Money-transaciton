@@ -10,6 +10,7 @@ class SendRequest(BaseModel):
     path: str
     payload: dict
     files: dict | None = None
+    text: str | None = None     # the text this request sends, for recording
 
 
 @runtime_checkable

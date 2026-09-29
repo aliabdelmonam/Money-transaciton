@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base, TimestampMixin, str_enum
@@ -35,6 +35,10 @@ class Message(TimestampMixin, Base):
 
     ``(channel, provider_message_id)`` is unique, so a webhook delivery that
     Meta retries can be detected and skipped instead of being OCR'd twice.
+
+    A reply too long for one WhatsApp message is sent as several; each part
+    is its own row (own provider id, own delivered/read receipts). Parts
+    after the first point at it with ``part_of_id``; ``part_index`` orders them.
     """
 
     __tablename__ = "messages"
@@ -55,6 +59,10 @@ class Message(TimestampMixin, Base):
     reply_to_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), index=True
     )
+    part_of_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), index=True
+    )
+    part_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # 0 = first/only part
     text: Mapped[Optional[str]] = mapped_column(Text)        # body, or the image caption
     error: Mapped[Optional[str]] = mapped_column(Text)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # provider timestamp
@@ -62,7 +70,18 @@ class Message(TimestampMixin, Base):
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="messages")
-    reply_to: Mapped[Optional["Message"]] = relationship(remote_side=[id])
+    reply_to: Mapped[Optional["Message"]] = relationship(remote_side=[id], foreign_keys=[reply_to_id])
+    part_of: Mapped[Optional["Message"]] = relationship(
+        remote_side=[id], foreign_keys=[part_of_id], back_populates="parts"
+    )
+    # Parts 2..k of a split message, in order (empty for a message sent in one piece).
+    parts: Mapped[list["Message"]] = relationship(
+        foreign_keys=[part_of_id],
+        back_populates="part_of",
+        order_by=part_index,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     attachments: Mapped[list["Attachment"]] = relationship(
         back_populates="message", cascade="all, delete-orphan", passive_deletes=True
     )

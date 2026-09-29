@@ -3,7 +3,7 @@ from typing import Mapping, Optional, Protocol, runtime_checkable
 
 from channels.events.base import ChannelEvent
 from channels.events.messages import ImageMessageReceived
-from channels.models.outgoing import OutgoingMessage
+from channels.models.outgoing import OutgoingMessage, SentMessage
 from channels.protocol.channel import Channel
 
 logger = logging.getLogger(__name__)
@@ -66,20 +66,20 @@ class ChatbotResponder:
         self._channel = channel
         self._provider = provider
 
-    async def handle(self, event: Optional[ChannelEvent]) -> Optional[str]:
-        """Reply to ``event`` if it is a user message; returns the sent message id."""
+    async def handle(self, event: Optional[ChannelEvent]) -> list[SentMessage]:
+        """Reply to ``event`` if it is a user message; returns the parts sent (empty if none)."""
         if not isinstance(event, REPLYABLE_EVENTS):
-            return None
+            return []
         text = await self._provider.reply(event)
         if not text:
-            return None
+            return []
         return await self.send_text(
             event.conversation_id, text, reply_to=event.provider_message_id
         )
 
     async def send_text(
         self, conversation_id: str, text: str, reply_to: Optional[str] = None
-    ) -> Optional[str]:
+    ) -> list[SentMessage]:
         """Send an arbitrary text message, e.g. a result computed later."""
         return await self._channel.send(
             OutgoingMessage(
