@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -106,9 +107,23 @@ def format_transaction(result: dict) -> Optional[str]:
             continue
         if key in MONEY_FIELDS and currency:
             value = f"{value} {currency}"
+        elif key == "datetime":
+            value = format_date(value)
         lines.append(f"{label}: {value}")
     for party, label in (("sender", "From"), ("receiver", "To")):
         details = {slot: value for slot, value in (result.get(party) or {}).items() if slot != "other"}
         if details:
             lines.append(f"{label}: " + ", ".join(str(value) for value in details.values()))
     return "\n".join(lines)
+
+
+def format_date(value: str) -> str:
+    """ISO date from the extractor -> '24 Sep 2026, 10:11 PM' ('24 Sep 2026' if it has no time)."""
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return value
+    text = f"{dt.day} {dt:%b %Y}"
+    if "T" in value:
+        text += f", {dt:%I:%M %p}".replace(" 0", " ", 1)
+    return text
