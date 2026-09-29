@@ -48,7 +48,7 @@ class WhatsAppSender:
         try:
             response = await self._client.post(path, json=payload)
         except httpx.HTTPError as error:
-            raise ChannelError(f"whatsapp send failed: {error}") from error
+            raise ChannelError(f"whatsapp send failed: {error!r}") from error
 
         if response.status_code == 429:
             raise RateLimitError(f"whatsapp rate limited: {response.text[:200]}")

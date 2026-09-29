@@ -88,7 +88,7 @@ class WhatsappAdapter:
             response = await self._client.get(f"{self._api_root}/{media_id}")
             response.raise_for_status()
         except httpx.HTTPError as error:
-            logger.error("whatsapp media resolve failed for %s: %s", media_id, error)
+            logger.error("whatsapp media resolve failed for %s: %r", media_id, error)
             return None
         info = response.json()
         size = info.get("file_size")
@@ -104,7 +104,7 @@ class WhatsappAdapter:
             response = await self._client.get(url, timeout=30.0)
             response.raise_for_status()
         except httpx.HTTPError as error:
-            logger.error("whatsapp media download failed: %s", error)
+            logger.error("whatsapp media download failed: %r", error)
             return None
         if len(response.content) > self._max_media_bytes:
             raise MediaTooLargeError(

@@ -48,10 +48,10 @@ async def lifespan(app: FastAPI):
     providers = []
     reader = None
     if settings.ocr_enabled:
-        reader = ReceiptReader(settings.inbound_media_dir)
+        reader = ReceiptReader(settings.inbound_media_dir, settings.ocr_workers)
         logger.info("loading OCR models...")
         await reader.start()
-        providers.append(TransactionReplyProvider(channel, reader, store, settings.ocr_max_concurrent))
+        providers.append(TransactionReplyProvider(channel, reader, store))
     providers.append(StaticReplyProvider({ImageMessageReceived: FALLBACK_REPLY}))
 
     app.state.whatsapp = channel

@@ -14,7 +14,7 @@ Three phases:
   startup     model load time and the first (cold) request
   sequential  every image, one request at a time, RUNS times: the service time
   burst       every image sent at once, as when a user forwards a batch: the
-              latency users see while requests queue behind the single OCR thread
+              latency users see while requests queue for the OCR workers
 
 Not collected by pytest (the name does not start with test_): it loads the OCR
 models and takes minutes.
@@ -25,7 +25,6 @@ import logging
 import os
 import sys
 import tempfile
-import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -56,7 +55,7 @@ except ImportError:  # memory numbers are skipped without it
 IMAGES_DIR = ROOT / "synthetic"   # folder of receipt images
 RUNS = 1                          # sequential passes over every image; more gives run-to-run jitter
 WARMUP = 1                        # unmeasured requests after the cold one
-MAX_CONCURRENT = 2                # OCR_MAX_CONCURRENT for the burst
+WORKERS = 4                       # OCR_WORKERS: OCR processes reading images in parallel
 SLO_SECONDS = 5.0                 # latency target
 BURST = True                      # also send every image at once
 JSON_OUTPUT: Optional[Path] = None  # e.g. ROOT / "output" / "latency.json" to save every number
@@ -88,7 +87,7 @@ class Request:
     ocr_started: Optional[float] = None
     finished: float = 0.0
     stages: dict = field(default_factory=dict)
-    cpu: float = 0.0          # process CPU seconds; only meaningful one request at a time
+    cpu: float = 0.0          # CPU seconds, OCR workers included; only meaningful one request at a time
     ocr_lines: int = 0
     fields: list = field(default_factory=list)
     read: bool = False        # the bot replied with transaction details
@@ -115,38 +114,23 @@ class Request:
 
 
 class Probe:
-    """Time the OCR and extraction of each request by wrapping the functions ReceiptReader calls."""
+    """Record the OCR and extraction time of each request, as measured inside the OCR worker."""
 
     def __init__(self):
         self.requests: dict[str, Request] = {}
-        self._current = threading.local()
 
-    def install(self) -> None:
-        import paddle_ocr
-        import transaction_extractor
-
-        extract_lines, extract = paddle_ocr.extract_lines, transaction_extractor.extract
-
-        def timed_extract_lines(ocr, path):
-            request = self.requests[Path(path).stem]  # images are saved as <request id>.<ext>
-            self._current.request = request
-            request.ocr_started = time.perf_counter()
-            lines = extract_lines(ocr, path)
-            request.stages["ocr"] = time.perf_counter() - request.ocr_started
-            request.ocr_lines = len(lines)
-            return lines
-
-        def timed_extract(ocr_lines):
-            start = time.perf_counter()
-            result = extract(ocr_lines)
-            request = self._current.request
-            request.stages["extract"] = time.perf_counter() - start
-            request.fields = sorted(k for k, v in result[0].items() if v and k not in NOT_FIELDS)
+    def install(self, reader: ReceiptReader) -> None:
+        async def timed_read(data, filename):
+            result, timings = await reader.read_timed(data, filename)
+            request = self.requests[Path(filename).stem]  # images are named <request id>.<ext>
+            request.stages["ocr"], request.stages["extract"] = timings["ocr"], timings["extract"]
+            # The worker's clock is not ours; place the OCR start by working back from now.
+            request.ocr_started = time.perf_counter() - timings["ocr"] - timings["extract"]
+            request.ocr_lines = timings["lines"]
+            request.fields = sorted(k for k, v in result.items() if v and k not in NOT_FIELDS)
             return result
 
-        # ReceiptReader imports these at call time, so patching the modules is enough.
-        paddle_ocr.extract_lines = timed_extract_lines
-        transaction_extractor.extract = timed_extract
+        reader.read = timed_read
 
 
 class TimedStore:
@@ -186,8 +170,34 @@ class FakeChannel:
         return InboundMedia(attachment.data, attachment.mime_type, attachment.filename)
 
 
+def family(process) -> list:
+    """This process and its OCR workers (which may exit between listing and reading them)."""
+    alive = []
+    for member in [process, *process.children(recursive=True)]:
+        try:
+            member.memory_info()
+            alive.append(member)
+        except psutil.Error:
+            pass
+    return alive
+
+
+def cpu_seconds() -> float:
+    """CPU time used so far by this process and its OCR workers."""
+    if psutil is None:
+        return time.process_time()  # misses the workers
+    total = 0.0
+    for member in family(psutil.Process()):
+        try:
+            times = member.cpu_times()
+            total += times.user + times.system
+        except psutil.Error:
+            pass
+    return total
+
+
 class MemorySampler:
-    """Track the process's peak resident memory while the benchmark runs."""
+    """Track the peak resident memory of this process and its OCR workers while the benchmark runs."""
 
     def __init__(self, interval: float = 0.05):
         self._process = psutil.Process() if psutil else None
@@ -198,7 +208,7 @@ class MemorySampler:
     def now(self) -> Optional[int]:
         if self._process is None:
             return None
-        rss = self._process.memory_info().rss
+        rss = sum(p.memory_info().rss for p in family(self._process))
         self.peak = max(self.peak, rss)
         return rss
 
@@ -244,7 +254,7 @@ async def send(provider, store, probe, image: Image, request_id: str, phase: str
             mime_type="image/png" if image.path.suffix.lower() == ".png" else "image/jpeg",
         ),
     )
-    cpu = time.process_time()
+    cpu = cpu_seconds()
     request.submitted = time.perf_counter()
     # Same order as RecordingResponder.handle -> TransactionReplyProvider.reply.
     try:
@@ -257,7 +267,7 @@ async def send(provider, store, probe, image: Image, request_id: str, phase: str
         request.error = repr(error)
         reply = None
     request.finished = time.perf_counter()
-    request.cpu = time.process_time() - cpu
+    request.cpu = cpu_seconds() - cpu
     request.read = reply is not None
     return request
 
@@ -272,7 +282,7 @@ async def benchmark() -> dict:
         url = f"sqlite+aiosqlite:///{(Path(tmp) / 'bench.db').as_posix()}"
         await asyncio.to_thread(upgrade, url)
         database = Database(url)
-        reader = ReceiptReader(Path(tmp) / "inbound")
+        reader = ReceiptReader(Path(tmp) / "inbound", WORKERS)
         probe = Probe()
         memory.start()
         try:
@@ -282,10 +292,10 @@ async def benchmark() -> dict:
             await reader.start()
             model_load = time.perf_counter() - start
             rss_loaded = memory.now()
-            probe.install()
+            probe.install(reader)
 
             store = TimedStore(TransactionStore(database), probe)
-            provider = TransactionReplyProvider(FakeChannel(), reader, store, MAX_CONCURRENT)
+            provider = TransactionReplyProvider(FakeChannel(), reader, store)
 
             cold = await send(provider, store, probe, images[0], "cold-000", "cold")
             for w in range(WARMUP):  # not measured
@@ -316,7 +326,7 @@ async def benchmark() -> dict:
 
     return {
         "config": {
-            "images": len(images), "runs": RUNS, "warmup": WARMUP, "max_concurrent": MAX_CONCURRENT,
+            "images": len(images), "runs": RUNS, "warmup": WARMUP, "workers": WORKERS,
             "slo_seconds": SLO_SECONDS, "cpu_count": os.cpu_count(), "python": sys.version.split()[0],
         },
         "startup": {"model_load": model_load, "cold_request": cold.to_dict(),
@@ -456,7 +466,7 @@ def report(result: dict) -> dict:
     burst = None
     if result["burst"]:
         burst = summarize(result["burst"], result["burst_wall"], slo)
-        print(f"\nBURST  all {burst['requests']} images at once, max_concurrent={config['max_concurrent']}"
+        print(f"\nBURST  all {burst['requests']} images at once, workers={config['workers']}"
               f" (what users see when requests queue)")
         stats_table([("total", burst["total"]), ("wait", burst["wait_before_ocr"]), ("ocr", burst["stages"]["ocr"])])
         print(f"\n  last reply after         {burst['wall_seconds']:8.2f} s")

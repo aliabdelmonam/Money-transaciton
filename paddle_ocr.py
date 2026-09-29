@@ -29,8 +29,9 @@ def extract_text(ocr, image_path):
     return "\n".join(line["text"] for line in extract_lines(ocr, image_path))
 
 
-def create_ocr():
+def create_ocr(cpu_threads=None):
     # enable_mkldnn=False works around a oneDNN crash in paddlepaddle 3.3 on CPU
+    extra = {} if cpu_threads is None else {"cpu_threads": cpu_threads}
     return PaddleOCR(
         lang="ar",
         ocr_version="PP-OCRv5",
@@ -38,6 +39,7 @@ def create_ocr():
         use_doc_unwarping=False,
         use_textline_orientation=True,
         enable_mkldnn=False,
+        **extra,
     )
 
 

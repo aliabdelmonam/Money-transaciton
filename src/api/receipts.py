@@ -1,10 +1,14 @@
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+import os
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from api import ocr_worker
 from api.persistence import record
 from channels.events.base import ChannelEvent
 from channels.events.messages import ImageMessageReceived
@@ -28,76 +32,85 @@ MONEY_FIELDS = ("amount", "fees", "total")
 
 
 class ReceiptReader:
-    """Run the PaddleOCR transaction extractor on a single worker thread.
+    """Run the PaddleOCR transaction extractor in a pool of worker processes.
 
-    PaddleOCR is CPU-heavy and not thread-safe, so every call goes through
-    one dedicated thread and the event loop is never blocked.
+    Each worker loads its own copy of the models and reads one image at a time,
+    so ``workers`` receipts are read in parallel. Processes rather than threads:
+    PaddleOCR is not thread-safe, and running it on a thread stalls the event
+    loop for the whole read, which makes every in-flight Meta call time out.
     """
 
-    def __init__(self, media_dir: Path):
+    def __init__(self, media_dir: Path, workers: int = 2):
         self._media_dir = Path(media_dir)
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr")
-        self._ocr = None
+        self._workers = workers
+        # Split the cores between workers instead of each one using Paddle's default.
+        self._cpu_threads = max(1, (os.cpu_count() or 1) // workers)
+        self._executor = self._new_executor()
 
     async def start(self) -> None:
-        """Load the OCR models up front so the first receipt is not slowed down."""
-        await self._run(self._load)
+        """Start every worker and load its models up front so the first receipts are not slowed down."""
+        await asyncio.gather(*(self._run(ocr_worker.ping) for _ in range(self._workers)))
+        logger.info("OCR models loaded in %d workers (%d CPU threads each)", self._workers, self._cpu_threads)
 
     async def read(self, data: bytes, filename: str) -> dict:
         """Save the image to the inbound media dir and extract its transaction fields."""
-        return await self._run(self._extract, self._media_dir / Path(filename).name, data)
+        result, _ = await self.read_timed(data, filename)
+        return result
+
+    async def read_timed(self, data: bytes, filename: str) -> tuple[dict, dict]:
+        """``read``, plus how long OCR and extraction took inside the worker."""
+        path = self._media_dir / Path(filename).name
+        result, timings = await self._run(ocr_worker.read, path, data)
+        logger.info("read %s: ocr %.1fs, extract %.2fs", path.name, timings["ocr"], timings["extract"])
+        return result, timings
 
     def close(self) -> None:
         self._executor.shutdown(wait=False, cancel_futures=True)
 
+    def _new_executor(self) -> ProcessPoolExecutor:
+        return ProcessPoolExecutor(
+            max_workers=self._workers,
+            mp_context=multiprocessing.get_context("spawn"),
+            initializer=ocr_worker.load,
+            initargs=(self._cpu_threads,),
+        )
+
     async def _run(self, fn, *args):
-        return await asyncio.get_running_loop().run_in_executor(self._executor, fn, *args)
-
-    def _load(self) -> None:
-        from paddle_ocr import create_ocr  # heavy import, only when OCR is enabled
-
-        self._ocr = create_ocr()
-        # paddle_ocr disables logging process-wide on import; give the app its logs back.
-        logging.disable(logging.NOTSET)
-        logger.info("OCR models loaded")
-
-    def _extract(self, path: Path, data: bytes) -> dict:
-        from paddle_ocr import extract_lines
-        from transaction_extractor import extract
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
-        result, _ = extract(extract_lines(self._ocr, path))
-        return result
+        executor = self._executor
+        try:
+            return await asyncio.get_running_loop().run_in_executor(executor, fn, *args)
+        except BrokenProcessPool:
+            # A worker died (e.g. a native crash in Paddle); the pool is unusable after that.
+            if self._executor is executor:
+                logger.error("an OCR worker died; restarting the OCR pool")
+                executor.shutdown(wait=False, cancel_futures=True)
+                self._executor = self._new_executor()
+            raise
 
 
 class TransactionReplyProvider:
     """Reply to a receipt image with the transaction details read from it, and store them."""
 
-    def __init__(
-        self, channel: Channel, reader: ReceiptReader, store: TransactionStore, max_concurrent: int = 2
-    ):
+    def __init__(self, channel: Channel, reader: ReceiptReader, store: TransactionStore):
         self._channel = channel
         self._reader = reader
         self._store = store
-        # OCR itself is serial (one worker thread); this bounds how many images are
-        # downloaded and held in memory while waiting for it.
-        self._slots = asyncio.Semaphore(max_concurrent)
 
     async def reply(self, event: ChannelEvent) -> Optional[str]:
         if not isinstance(event, ImageMessageReceived):
             return None
-        async with self._slots:
-            media = await self._channel.fetch_media(event.attachment)
-            if media is None:
-                logger.warning("could not download media for message %s", event.provider_message_id)
-                await record("transaction", self._store.record_failure(event, "could not download media"))
-                return None
-            try:
-                result = await self._reader.read(media.data, media.filename or "receipt")
-            except Exception as error:
-                await record("transaction", self._store.record_failure(event, repr(error), media))
-                raise
+        # Downloads run as soon as the webhook arrives; the reader queues images
+        # until an OCR worker is free.
+        media = await self._channel.fetch_media(event.attachment)
+        if media is None:
+            logger.warning("could not download media for message %s", event.provider_message_id)
+            await record("transaction", self._store.record_failure(event, "could not download media"))
+            return None
+        try:
+            result = await self._reader.read(media.data, media.filename or "receipt")
+        except Exception as error:
+            await record("transaction", self._store.record_failure(event, repr(error), media))
+            raise
         logger.info("extracted transaction from %s: %s", event.provider_message_id, result)
         await record("transaction", self._store.record_result(event, media, result))
         return format_transaction(result)
