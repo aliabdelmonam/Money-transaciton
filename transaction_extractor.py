@@ -99,6 +99,20 @@ def parse_money(text):
     return (int(value) if value.is_integer() else value), (CURRENCY_CODES[currency.group().lower()] if currency else None)
 
 
+SENTENCE_AMOUNT = rf"(?P<amount>(?:(?:{CURRENCY.pattern})\s*)?(?:{NUMBER})(?:\s*(?:{CURRENCY.pattern}))?)"
+SENTENCES = [
+    re.compile(
+        pattern.replace(" ", r"\s+")
+        .replace("{amount}", SENTENCE_AMOUNT)
+        .replace("{sender}", r"(?P<sender>[^.!،]+?)")
+        .replace("{receiver}", r"(?P<receiver>[^.!،]+?)")
+        + r"\s*(?:[.!،]|$)",
+        re.IGNORECASE,
+    )
+    for pattern in cfg.SENTENCES
+]
+
+
 def month_number(word):
     word = norm(word).rstrip(".")
     return MONTHS.get(word) or (MONTHS.get(word[:3]) if word.isascii() else None)
@@ -328,6 +342,13 @@ def header_value(text):
     return classify(text)
 
 
+def sentence_party(text):
+    """Party named inside a sentence; a phone wins over trailing words ('010... successfully')."""
+    if m := PHONE.search(re.sub(r"[\s-]", "", clean(text))):
+        return [("phone", m.group())]
+    return classify(text)
+
+
 def set_field(result, target, value):
     if target in MONEY_FIELDS:
         if result[target] is None:
@@ -364,21 +385,36 @@ def extract(ocr_lines):
     }
     used = set()
 
+    # 0. one-sentence receipts: "You transferred 9 EGP To 01001496550". First, so the
+    #    "To ..." inside the sentence is not taken for a party header.
+    for i, line in enumerate(lines):
+        m = next((m for pattern in SENTENCES if (m := pattern.search(line["text"]))), None)
+        if not m:
+            continue
+        used.add(i)
+        set_field(result, "amount", m["amount"])
+        for party, value in m.groupdict().items():
+            if party in ("sender", "receiver") and value:
+                add_party(result[party], sentence_party(value))
+        result["evidence"].append({"field": "sentence", "label": None, "value": line["text"]})
+
     # 1. From / To blocks
     for i, line in enumerate(lines):
-        if line["label"] and line["label"][0] == "party":
+        if i not in used and line["label"] and line["label"][0] == "party":
             _, party, inline = line["label"]
             used.add(i)
             if inline:
                 add_party(result[party], header_value(inline))
             for j in party_section(lines, i):
+                if j in used:
+                    continue
                 used.add(j)
                 add_party(result[party], classify(lines[j]["text"]))
                 result["evidence"].append({"field": party, "label": line["text"], "value": lines[j]["text"]})
 
     # 2. label -> value pairs
     for i, line in enumerate(lines):
-        if line["label"] and line["label"][0] == "field":
+        if i not in used and line["label"] and line["label"][0] == "field":
             _, target, inline = line["label"]
             used.add(i)
             value = inline or find_value(lines, i, target, used)
@@ -416,7 +452,8 @@ def extract(ocr_lines):
             if kind == "datetime" and result["datetime"] is None:
                 result["datetime"] = parse_datetime(line["text"])
 
-    leftover_text = norm(" ".join(u["text"] for u in result["unmapped"]))
+    leftover_text = norm(" ".join([u["text"] for u in result["unmapped"]]
+                                  + [e["value"] for e in result["evidence"] if e["field"] == "sentence"]))
     result["status"] = next((status for status, words in cfg.STATUS_KEYWORDS.items()
                              if any(keyword_in(w, leftover_text) for w in words)), None)
     all_text = norm(" ".join(l["text"] for l in lines))

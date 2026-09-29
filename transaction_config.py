@@ -60,6 +60,17 @@ PARTY_HEADERS = {
     ],
 }
 
+# Receipts that state the whole transfer in one sentence ("You transferred 9 EGP To 010...").
+# Matched case-insensitively on the cleaned OCR line; a space matches any whitespace.
+# {amount} is a number with an optional currency before or after it; {sender} / {receiver}
+# is the party value (phone, IPA handle, name...) running to the end of the sentence.
+SENTENCES = [
+    r"you (?:have )?(?:successfully )?(?:transferred|sent|paid) {amount} to {receiver}",
+    r"you (?:have )?(?:successfully )?received {amount} from {sender}",
+    r"تم (?:تحويل|ارسال|إرسال|دفع) (?:مبلغ )?{amount} (?:إلى|الى|الي|ل) ?{receiver}",
+    r"تم استلام (?:مبلغ )?{amount} من {sender}",
+]
+
 # Text after a party header that names the channel rather than the person ("To Mobile Wallet").
 CHANNELS = [
     "Mobile Wallet", "Wallet", "Bank Account", "Account", "Card", "InstaPay", "IPA", "Mobile Number",
