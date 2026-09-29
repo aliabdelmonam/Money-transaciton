@@ -29,6 +29,8 @@ class _Settings(BaseSettings):
     inbound_media_url_path: str = "/media/inbound"
     inbound_media_max_bytes: int = 20 * 1024 * 1024
     ocr_enabled: bool = True
+    # Receipts downloaded + OCR'd at once; the rest wait their turn without holding image bytes.
+    ocr_max_concurrent: int = Field(default=2, ge=1)
     # Sent as the X-API-Key header on every endpoint except the webhook; unset = all locked.
     api_key: Optional[SecretStr] = None
     channels: _ChannelsSettings = Field(default_factory=_ChannelsSettings)

@@ -73,18 +73,22 @@ class ReceiptReader:
 class TransactionReplyProvider:
     """Reply to a receipt image with the transaction details read from it."""
 
-    def __init__(self, channel: Channel, reader: ReceiptReader):
+    def __init__(self, channel: Channel, reader: ReceiptReader, max_concurrent: int = 2):
         self._channel = channel
         self._reader = reader
+        # OCR itself is serial (one worker thread); this bounds how many images are
+        # downloaded and held in memory while waiting for it.
+        self._slots = asyncio.Semaphore(max_concurrent)
 
     async def reply(self, event: ChannelEvent) -> Optional[str]:
         if not isinstance(event, ImageMessageReceived):
             return None
-        media = await self._channel.fetch_media(event.attachment)
-        if media is None:
-            logger.warning("could not download media for message %s", event.provider_message_id)
-            return None
-        result = await self._reader.read(media.data, media.filename or "receipt")
+        async with self._slots:
+            media = await self._channel.fetch_media(event.attachment)
+            if media is None:
+                logger.warning("could not download media for message %s", event.provider_message_id)
+                return None
+            result = await self._reader.read(media.data, media.filename or "receipt")
         logger.info("extracted transaction from %s: %s", event.provider_message_id, result)
         return format_transaction(result)
 
