@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from channels.config.channels import ChannelsSettings as _ChannelsSettings
@@ -28,6 +29,8 @@ class _Settings(BaseSettings):
     inbound_media_url_path: str = "/media/inbound"
     inbound_media_max_bytes: int = 20 * 1024 * 1024
     ocr_enabled: bool = True
+    # Sent as the X-API-Key header on every endpoint except the webhook; unset = all locked.
+    api_key: Optional[SecretStr] = None
     channels: _ChannelsSettings = Field(default_factory=_ChannelsSettings)
 
 

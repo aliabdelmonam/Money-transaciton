@@ -133,7 +133,13 @@ Users send a receipt screenshot on WhatsApp and the bot replies with the extract
 | --- | --- |
 | `GET /webhooks/whatsapp` | Meta's verification handshake (`hub.challenge`) |
 | `POST /webhooks/whatsapp` | Incoming updates; signature checked with `CHANNELS_WHATSAPP__WEBHOOK_SECRET` |
-| `GET /health` / `GET /health/whatsapp` | Liveness / Graph API token check |
+| `GET /health` | Liveness |
+| `GET /health/whatsapp` | Graph API token check |
+
+Every endpoint except the webhook needs the `X-API-Key` header set to `API_KEY`; without it (or with
+`API_KEY` unset) the request gets a 401. The webhook can't carry that header because Meta calls it, so
+the server will not start without `CHANNELS_WHATSAPP__WEBHOOK_SECRET`, and webhook calls that are not
+signed with it are rejected.
 
 ### Database
 

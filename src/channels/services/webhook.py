@@ -22,12 +22,14 @@ class WebhookService:
 
     def verify(self, body: bytes, signature: Optional[str]) -> bool:
         if not self._secret:
-            return True
+            logger.error("webhook rejected: no secret configured")
+            return False
         if self._scheme == "secret_token":
-            return hmac.compare_digest(signature or "", self._secret)
+            return hmac.compare_digest((signature or "").encode(), self._secret.encode())
         expected = hmac.new(self._secret.encode(), body, hashlib.sha256).hexdigest()
         provided = (signature or "").split("=")[-1]
-        return hmac.compare_digest(provided, expected)
+        # Compare bytes: compare_digest raises on non-ASCII str, e.g. a garbage header.
+        return hmac.compare_digest(provided.encode(), expected.encode())
 
     def parse(self, payload: dict) -> Optional[ChannelEvent]:
         return self._mapper.to_event(payload)

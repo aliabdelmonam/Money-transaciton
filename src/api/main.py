@@ -8,12 +8,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 import channels.adapters.whatsapp.adapter  # noqa: F401  registers the "whatsapp" channel
 from api.persistence import RecordingChannel, RecordingResponder
 from api.receipts import ReceiptReader, TransactionReplyProvider
 from api.routes import health, whatsapp
+from api.security import require_api_key
 from channels.builders.channel import ChannelBuilder
 from channels.config import Settings
 from channels.events.messages import ImageMessageReceived
@@ -35,6 +36,9 @@ FALLBACK_REPLY = (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = Settings()
+    app.state.api_key = settings.api_key.get_secret_value() if settings.api_key else None
+    if not app.state.api_key:
+        logger.warning("API_KEY is not set: every API endpoint will reject every request")
     if settings.database_migrate_on_startup:
         await asyncio.to_thread(upgrade_database, settings.database_url)
     database = Database(settings.database_url)
@@ -66,6 +70,14 @@ async def lifespan(app: FastAPI):
         await database.dispose()
 
 
-app = FastAPI(title="Money Transaction Bot", lifespan=lifespan)
-app.include_router(health.router)
-app.include_router(whatsapp.router)
+def create_app() -> FastAPI:
+    application = FastAPI(title="Money Transaction Bot", lifespan=lifespan)
+    # Every router needs the X-API-Key header, except the webhook: Meta cannot send
+    # it, so those calls are authenticated by their signature and verify token instead.
+    protected = [Depends(require_api_key)]
+    application.include_router(health.router, dependencies=protected)
+    application.include_router(whatsapp.router)
+    return application
+
+
+app = create_app()

@@ -1,3 +1,4 @@
+import hmac
 import logging
 from typing import Optional
 
@@ -135,8 +136,8 @@ class WhatsappAdapter:
     ) -> bool:
         return (
             mode == "subscribe"
-            and self._verify_token is not None
-            and verify_token == self._verify_token
+            and bool(self._verify_token)
+            and hmac.compare_digest((verify_token or "").encode(), self._verify_token.encode())
         )
 
     async def close(self) -> None:

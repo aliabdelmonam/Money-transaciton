@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from channels.models.exceptions import ChannelError
@@ -17,7 +17,8 @@ class WhatsAppConfig(BaseModel):
     phone_number_id: str
     api_base: str = "https://graph.facebook.com"
     api_version: str = "v25.0"
-    webhook_secret: Optional[str] = None
+    # Required: without it anyone could post fake messages to the webhook.
+    webhook_secret: str = Field(min_length=1)
     verify_token: Optional[str] = None
 
 
