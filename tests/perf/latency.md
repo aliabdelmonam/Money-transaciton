@@ -1,6 +1,14 @@
-# Latency Benchmark Report
+# Latency Benchmark Report (Paddle-OCR)
 
 **15 images × 1 run** · 20 CPUs · Python 3.13.14
+
+**Models:**
+
+| Role | Model |
+|---|---|
+| Text line detector (`det_model`) | `PP-OCRv5_server_det` |
+| Arabic + English + digits (`ar_rec_model`) | `arabic_PP-OCRv5_mobile_rec` |
+| English / digits (`en_rec_model`) | `PP-OCRv6_medium_rec` *(None = Arabic only)* |
 
 ---
 
