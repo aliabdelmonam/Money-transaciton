@@ -23,7 +23,9 @@ def extract_text(reader, image_path):
 
 
 def main():
-    reader = easyocr.Reader(["ar", "en"], gpu=False, verbose=False)
+    import torch
+
+    reader = easyocr.Reader(["ar", "en"], gpu=torch.cuda.is_available(), verbose=False)
     for image_path in sorted(p for p in SYNTHETIC_DIR.iterdir() if p.suffix.lower() in IMAGE_EXTS):
         text = extract_text(reader, image_path)
         image_path.with_suffix(".easyocr.txt").write_text(text, encoding="utf-8")

@@ -596,9 +596,10 @@ class PaddleHybridOCR:
         from paddleocr import TextDetection, TextRecognition
         import paddle
 
-        device = "gpu:0" if USE_GPU and paddle.device.is_compiled_with_cuda() else "cpu"
+        has_gpu = paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0
+        device = "gpu:0" if USE_GPU and has_gpu else "cpu"
         if USE_GPU and device == "cpu":
-            print("[warn] paddlepaddle has no CUDA build -> running PaddleOCR on CPU")
+            print("[warn] no CUDA build of paddlepaddle or no GPU found -> running PaddleOCR on CPU")
         # enable_mkldnn=False works around a oneDNN crash in paddlepaddle 3.3 on CPU
         common = {"device": device, "enable_mkldnn": False}
         print(f"Loading PaddleOCR ({PADDLE_DET_MODEL} + {PADDLE_AR_REC_MODEL} + {PADDLE_EN_REC_MODEL}) on {device}...")

@@ -17,11 +17,15 @@ class EasyOCRAdapter:
 
     def __init__(self, config: EasyOCRConfig | None = None, use_gpu: bool = True, merge_gap_ratio: float = 1.5):
         import easyocr
+        import torch
 
         self.cfg = config or EasyOCRConfig()
         self.merge_gap_ratio = merge_gap_ratio
-        log.info("Loading EasyOCR (%s)", "+".join(self.cfg.langs))
-        self._reader = easyocr.Reader(list(self.cfg.langs), gpu=use_gpu, verbose=False)
+        gpu = use_gpu and torch.cuda.is_available()
+        if use_gpu and not gpu:
+            log.warning("torch sees no CUDA GPU -> running EasyOCR on CPU")
+        log.info("Loading EasyOCR (%s) on %s", "+".join(self.cfg.langs), "gpu" if gpu else "cpu")
+        self._reader = easyocr.Reader(list(self.cfg.langs), gpu=gpu, verbose=False)
 
     def read(self, image: np.ndarray) -> list[OCRResult]:
         results = []

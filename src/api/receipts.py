@@ -49,8 +49,9 @@ class ReceiptReader:
 
     async def start(self) -> None:
         """Start every worker and load its models up front so the first receipts are not slowed down."""
-        await asyncio.gather(*(self._run(ocr_worker.ping) for _ in range(self._workers)))
-        logger.info("OCR models loaded in %d workers (%d CPU threads each)", self._workers, self._cpu_threads)
+        devices = await asyncio.gather(*(self._run(ocr_worker.ping) for _ in range(self._workers)))
+        logger.info("OCR models loaded in %d workers on %s (%d CPU threads each)",
+                    self._workers, ", ".join(sorted(set(devices))), self._cpu_threads)
 
     async def read(self, data: bytes, filename: str) -> dict:
         """Save the image to the inbound media dir and extract its transaction fields."""

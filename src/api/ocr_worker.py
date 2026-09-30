@@ -10,22 +10,25 @@ import time
 from pathlib import Path
 
 _ocr = None
+_device = None
 
 
 def load(cpu_threads: int) -> None:
-    """Process initializer: load the OCR models once per worker."""
-    global _ocr
+    """Process initializer: load the OCR models once per worker, on the GPU if there is one."""
+    global _ocr, _device
     # Ctrl+C reaches the whole console; the parent shuts the workers down itself.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    from paddle_ocr import create_ocr  # heavy import, only when OCR is enabled
+    from paddle_ocr import create_ocr, detect_device  # heavy import, only when OCR is enabled
 
-    _ocr = create_ocr(cpu_threads=cpu_threads)
+    _device = detect_device()
+    _ocr = create_ocr(cpu_threads=cpu_threads, device=_device)
     # paddle_ocr disables logging process-wide on import; give the process its logs back.
     logging.disable(logging.NOTSET)
 
 
-def ping() -> None:
-    """No-op task used to wait until a worker is up."""
+def ping() -> str:
+    """Task used to wait until a worker is up; returns the device its models run on."""
+    return _device
 
 
 def read(path: Path, data: bytes) -> tuple[dict, dict]:

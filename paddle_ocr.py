@@ -29,7 +29,21 @@ def extract_text(ocr, image_path):
     return "\n".join(line["text"] for line in extract_lines(ocr, image_path))
 
 
-def create_ocr(cpu_threads=None):
+def detect_device():
+    """'gpu:0' when paddlepaddle is a CUDA build and sees a GPU, otherwise 'cpu'."""
+    # paddle is imported here, after paddleocr: on Windows torch fails to load its DLLs
+    # (WinError 127) if paddle was imported first
+    import paddle
+
+    try:
+        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+            return "gpu:0"
+    except Exception:  # broken CUDA driver/runtime -> CPU still works
+        pass
+    return "cpu"
+
+
+def create_ocr(cpu_threads=None, device=None):
     # enable_mkldnn=False works around a oneDNN crash in paddlepaddle 3.3 on CPU
     extra = {} if cpu_threads is None else {"cpu_threads": cpu_threads}
     return PaddleOCR(
@@ -39,6 +53,7 @@ def create_ocr(cpu_threads=None):
         use_doc_unwarping=False,
         use_textline_orientation=True,
         enable_mkldnn=False,
+        device=device or detect_device(),
         **extra,
     )
 
