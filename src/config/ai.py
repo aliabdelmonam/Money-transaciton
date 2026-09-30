@@ -6,7 +6,7 @@ from typing import Optional
 
 @dataclass
 class PaddleConfig:
-    det_model: str = "PP-OCRv5_server_det"            # text line detector
+    det_model: str = "PP-OCRv6_medium_det"            # text line detector
     ar_rec_model: str = "arabic_PP-OCRv5_mobile_rec"  # Arabic + English + digits
     en_rec_model: Optional[str] = "PP-OCRv6_medium_rec"  # English / digits (None = Arabic only)
     min_conf: float = 0.30              # drop readings below this (0-1)
