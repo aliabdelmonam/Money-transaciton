@@ -79,6 +79,13 @@ def load(path):
 def prepare(img):
     """(work image, (x0, y0, scale)): a work-image point (x, y) is (x0 + x / scale,
     y0 + y / scale) in ``img``, give or take the deskew / perspective correction."""
+    work, offset, _ = prepare_with_blocks(img)
+    return work, offset
+
+
+def prepare_with_blocks(img):
+    """``prepare``, plus the work image's segment.find_blocks: measuring the text height
+    already found them, so a caller that needs them doesn't pay for them twice."""
     img, (ox, oy) = _undark(img)
     img = _flatten(img)
     img, (mx, my) = _crop_margins(img)
@@ -89,14 +96,15 @@ def prepare(img):
     for _ in range(3):
         probe = _resize(img, scale)
         probe = _rotate(probe, _skew_angle(probe))
-        height = _text_height(probe)
+        blocks = segment.find_blocks(probe)
+        height = _text_height(blocks)
         if height is None or abs(TEXT_HEIGHT / height - 1) <= TEXT_HEIGHT_TOLERANCE:
             break
         new_scale = _clamp_scale(img, scale * TEXT_HEIGHT / height)
         if abs(new_scale / scale - 1) <= TEXT_HEIGHT_TOLERANCE:
             break
         scale = new_scale
-    return probe, (ox, oy, scale)
+    return probe, (ox, oy, scale), blocks
 
 
 def _border(gray):
@@ -123,10 +131,9 @@ def _crop_margins(img):
     return img[y0:min(h, y1 + pad), x0:min(w, x1 + pad)], (int(x0), int(y0))
 
 
-def _text_height(img):
+def _text_height(blocks):
     """Typical text line height: the lower quartile of block heights (mostly labels and
     values rather than the big amount or icons)."""
-    blocks = segment.find_blocks(img)
     if len(blocks) < 3:
         return None
     return float(np.percentile([b.h for b in blocks], 25))

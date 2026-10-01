@@ -6,7 +6,7 @@ A Python project that compares the performance of three different OCR (Optical C
 
 This project implements three popular OCR engines to process transaction images and extract text:
 
-- **PaddleOCR** - Baidu's open-source OCR framework (PP-OCRv5 model)
+- **PaddleOCR** - Baidu's open-source OCR framework (PP-OCRv6 detection, Arabic + English PP-OCRv5 recognition)
 - **EasyOCR** - A simple yet powerful OCR library
 - **Tesseract OCR** - Google's open-source OCR engine
 
@@ -25,7 +25,8 @@ Each engine processes the same set of synthetic transaction images and outputs e
 ```
 money-transaction/
 ├── README.md                      # This file
-├── paddle_ocr.py                  # PaddleOCR implementation
+├── paddle_ocr.py                  # PaddleOCR implementation (same interface as tesseract_ocr.py)
+├── paddle_engine/                 # its two-recognizer line reading and masked-name rebuilding
 ├── easy_ocr.py                    # EasyOCR implementation
 ├── tesseract_ocr.py               # Tesseract OCR implementation (same interface as paddle_ocr.py)
 ├── tesseract_engine/              # its image preparation, line finding and line readers
@@ -175,11 +176,20 @@ python paddle_ocr.py
 
 **Output files:** `*.paddleocr.txt`
 
-Features:
-- Uses PP-OCRv5 model (lightweight and fast)
-- Supports Arabic language detection
-- Optimized for document and scene text
-- Includes textline orientation detection
+Features (pipeline in `paddle_engine/`):
+- **Image preparation**: the Tesseract engine's `image.prepare` (dark mode inverted, photos of a
+  screen cut out, straightened and evenly lit, margins cropped, text scaled to ~28 px, tilt removed)
+- **Line finding**: `PP-OCRv6_medium_det` with the PaddleOCR pipeline's settings (the module's own
+  defaults shrink the image to 960 px and lose small text); overlapping boxes of one line
+  (`750` + `0 EGP`) merged. No textline orientation model: it flipped whole lines upside down
+- **Two recognizers per line** (`recognize.py`): `arabic_PP-OCRv5_mobile_rec` (the only one that
+  reads Arabic) and `en_PP-OCRv5_mobile_rec` (far better on Latin, e-mails, digits); Latin lines take
+  the English reading, Arabic lines the Arabic one, mixed lines (`Living Expenses - عيدية`) each
+  script from its own model
+- **Masked names** (`masked.py`): asterisks found and counted by shape on the Tesseract engine's line
+  blocks, erased, and the prefix and each initial read on their own; initials are read with a
+  letters-only CTC whitelist (the Arabic model otherwise reads `م` as `p`) and voted across paddings
+- GPU when available (~0.35 s per receipt); on the CPU detection alone takes ~10 s
 
 ### Using EasyOCR
 
