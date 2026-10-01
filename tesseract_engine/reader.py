@@ -100,7 +100,9 @@ def pick_script(eng, ara, width_chars=None):
     the line (``width_chars``: about how many characters fit in it). The Arabic one also
     counts half when it lost the digits of a mostly-digit English reading ("EGP501" read
     as "لشفت"): the Arabic model reads digits too. Not the other way round: the Arabic
-    model turns Latin letters into digits, and the English one Arabic letters.
+    model turns Latin letters into digits, and the English one Arabic letters. For the
+    same reason an Arabic reading of digits only, without a single Arabic letter, counts
+    only as digits beside an English reading with Latin letters ("EGP 1" read as "601").
     """
     def score(r, own_script):
         s = r.conf * (1.0 if own_script else 0.5)
@@ -111,7 +113,8 @@ def pick_script(eng, ara, width_chars=None):
     eng_chars = eng.text.replace(" ", "")
     eng_digits = len(DIGITS.findall(eng_chars))
     lost_digits = eng_digits >= 2 and eng_digits >= 0.5 * len(eng_chars) and not DIGITS.search(ara.text)
-    ara_score = score(ara, has_arabic(ara.text) or DIGITS.search(ara.text)) * (0.5 if lost_digits else 1)
+    latin_as_digits = not has_arabic(ara.text) and has_latin(eng.text)
+    ara_score = score(ara, has_arabic(ara.text) or DIGITS.search(ara.text)) * (0.5 if lost_digits or latin_as_digits else 1)
     eng_score = score(eng, has_latin(eng.text) or eng_digits)
     return (ara, "ara") if ara_score > eng_score else (eng, "eng")
 
