@@ -1,6 +1,7 @@
 # OCR / extraction
 paddleocr==3.7.0
 paddlepaddle==3.3.1
+pytesseract==0.3.13   # OCR_ENGINE=tesseract (needs Tesseract 5 installed; opencv comes with paddleocr)
 
 # WhatsApp webhook API
 fastapi==0.141.1

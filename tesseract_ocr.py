@@ -1,53 +1,95 @@
+"""Tesseract OCR: receipt lines with their boxes, the same interface as paddle_ocr.
+
+  1. image.prepare: dark mode / photo lighting / margins evened out, text scaled to ~28 px
+     tall, tilt removed
+  2. segment.find_blocks: text lines found with OpenCV morphology, icons dropped by colour
+  3. every line read on its own with the English and the Arabic model; the more plausible
+     script wins
+  4. lines that need more care re-read with their own strategy (reader.py): addresses,
+     digit strings and dates voted across scales with a whitelist, masked names rebuilt
+     around their asterisks, the headline amount split by colour, mixed-script lines
+     read with the combined model
+
+Tesseract runs in-process through libtesseract when it can (models loaded once), else
+one tesseract.exe per read.
+"""
 import logging
 import os
+import re
 import shutil
 import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# Lines are read in parallel threads: OpenMP threads inside each read would only fight
+# them for the CPU. Must be set before libtesseract loads.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+
 import cv2
 import numpy as np
 import pytesseract
 
+from tesseract_engine import fields, image, segment, tessapi
+from tesseract_engine.reader import ALNUM, LOWER_ALNUM, LineReader, asterisk_runs, crop, pick_script
+
 sys.stdout.reconfigure(encoding="utf-8")
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
-# tessdata_best: the most accurate models (float LSTM); the Windows installer only ships tessdata_fast.
-# Missing models are downloaded here on first use.
+DEFAULT_CMD = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# tessdata_best: the most accurate models (float LSTM); the Windows installer only ships
+# tessdata_fast. Missing models are downloaded here on first use.
 TESSDATA_DIR = Path(__file__).parent / "models" / "tessdata_best"
 TESSDATA_URL = "https://github.com/tesseract-ocr/tessdata_best/raw/main/{lang}.traineddata"
+LANGS = ("eng", "ara")
 SYNTHETIC_DIR = Path(__file__).parent / "synthetic"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-MIN_CONFIDENCE = 0.6  # mean word confidence of a line, 0-1 like paddle_ocr
-LANG = "ara+eng"
-PSM = 11              # sparse text: receipts are scattered label/value pairs
-SMALL_WORD = 0.75     # a word shorter than this * the tallest word on its line is re-read alone
-WORD_THREADS = 4      # small words re-read at once
-MIN_LONG_SIDE = 1600  # smaller images are upscaled to this
-GAMMA = 3             # > 1 darkens grey text; 3 read the most fields on synthetic/
-
+# Line confidence, 0-1 like paddle_ocr but not on its scale: a correct light-grey Arabic
+# line can score 0.25, and the extractor validates every value against its field type.
+MIN_CONFIDENCE = 0.2
+# A colourful block is more often a logo or icon than colour text: it must read surely.
+COLOUR_MIN_CONFIDENCE = 0.8
+# The headline amount is the tallest line with a digit, at least this x the median line.
+AMOUNT_HEIGHT = 1.5
+# A line with an English number is the amount over a taller one whose digits only the
+# Arabic model sees when it is at least this share of its height.
+AMOUNT_HEIGHT_TOLERANCE = 0.8
+# Share of a block's box covered by ink above which it is a solid bar, not a text line.
+SOLID_FILL = 0.6
+# The English model's confidence on garbage read from Arabic glyphs stays below this.
+MIXED_MIN_CONF = 60
+# A single-script reading at least this confident is the line, mixed or not.
+SURE_CONF = 85
+# Lines this x taller than the median may mix text sizes ("You transferred 9 EGP").
+MIXED_SIZE_HEIGHT = 1.3
+CHAR_WIDTH = 0.5  # a character's width, x the line height
 
 log = logging.getLogger(__name__)
 
 
 class TesseractOCR:
-    """Tesseract settings; the engine itself is a tesseract.exe call per image."""
+    """Tesseract settings, the loaded engines and the thread pool lines are read in."""
 
-    def __init__(self, lang=LANG, psm=PSM, tessdata_dir=TESSDATA_DIR):
-        self.lang = lang
-        self.config = f"--oem 1 --psm {psm}"
-        self.word_config = "--oem 1 --psm 8"  # psm 8: a single word
+    def __init__(self, workers, tessdata_dir=TESSDATA_DIR):
+        cmd = os.environ.get("TESSERACT_CMD")
+        if not cmd and not shutil.which("tesseract") and os.path.exists(DEFAULT_CMD):
+            cmd = DEFAULT_CMD
+        if cmd:
+            pytesseract.pytesseract.tesseract_cmd = cmd
         try:
-            for name in lang.split("+"):
-                ensure_model(name, tessdata_dir)
+            for lang in LANGS:
+                ensure_model(lang, tessdata_dir)
+            # tesseract splits its config on whitespace: forward slashes, no quotes
+            datapath = tessdata_dir.resolve().as_posix()
         except OSError as error:  # offline, GitHub down, ...: still read, just less accurately
             log.warning("could not get tessdata_best models (%s) -> using the installed (fast, less accurate) ones",
                         error)
-        else:
-            self.config += f" --tessdata-dir {tessdata_dir.as_posix()}"
-            self.word_config += f" --tessdata-dir {tessdata_dir.as_posix()}"
+            datapath = None
+        engines = tessapi.Engines.create(datapath, workers)
+        if engines is None:
+            log.warning("libtesseract not available -> one tesseract.exe per read (about 4x slower)")
+        self.backend = "libtesseract" if engines else "cli"
+        self.reader = LineReader(engines, datapath)
+        self.pool = ThreadPoolExecutor(max_workers=workers)
 
 
 def ensure_model(lang, tessdata_dir=TESSDATA_DIR):
@@ -69,71 +111,109 @@ def ensure_model(lang, tessdata_dir=TESSDATA_DIR):
     return path
 
 
-def prepare(image):
-    """Grey, dark text on a light background, upscaled if small: what Tesseract reads best."""
-    scale = MIN_LONG_SIDE / max(image.shape[:2])
-    if scale > 1:  # small screenshots: Tesseract wants ~30 px tall text
-        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    grey = image.min(axis=2)  # coloured text (orange amounts) becomes dark too
-    grey = cv2.normalize(grey, None, 0, 255, cv2.NORM_MINMAX)
-    if np.mean(grey) < 127:  # dark mode screenshot
-        grey = 255 - grey
-    # darken mid greys: light grey labels ("Reference", "From") are otherwise binarised away
-    return (255 * (grey / 255.0) ** GAMMA).astype(np.uint8)
+def find_amount(blocks, gray):
+    """The headline amount: the tallest line that reads as a number, clearly taller than
+    body text. Never an address line, nor a solid bar or button. The Arabic model finds
+    digits in any jumble (an icon a little taller than the amount), so a line of about the
+    same height whose English reading has the number beats one whose digits only the
+    Arabic model sees."""
+    if not blocks:
+        return None
+    median_h = float(np.median([b.h for b in blocks]))
+    ink = segment.ink_threshold(gray)
+
+    def tallest(cands):
+        best = max(cands, key=lambda b: b.h, default=None)
+        return best if best is not None and best.h >= AMOUNT_HEIGHT * median_h else None
+
+    def english(b):
+        # real digits: "I °c oo" is no number although I and o are digit look-alikes
+        n = sum(ch.isdigit() for ch in b.extra["eng"].text)
+        return n >= 2 or (n == 1 and bool(fields.amount(b.extra["eng"].text)))
+
+    usable = [b for b in blocks
+              if (gray[b.y:b.y2, b.x:b.x2] < ink).mean() < SOLID_FILL  # text covers well under half its box
+              and not any("@" in b.extra[k].text for k in ("eng", "ara"))]
+    best = tallest([b for b in usable if any(ch.isdigit() for ch in b.extra["eng"].text + b.extra["ara"].text)])
+    if best is None or english(best):
+        return best
+    return tallest([b for b in usable if english(b) and b.h >= AMOUNT_HEIGHT_TOLERANCE * best.h]) or best
 
 
-def read_word(image, box, lang, config):
-    """Re-read one word on its own; (text, confidence 0-100), ('', -1) if nothing was read."""
-    x0, y0, x1, y1 = box
-    pad = max(4, (y1 - y0) // 3)
-    crop = image[max(0, y0 - pad):y1 + pad, max(0, x0 - pad):x1 + pad]
-    data = pytesseract.image_to_data(crop, lang=lang, config=config, output_type=pytesseract.Output.DICT)
-    found = [(t.strip(), float(c)) for t, c in zip(data["text"], data["conf"]) if t.strip() and float(c) >= 0]
-    if not found:
-        return "", -1.0
-    return " ".join(t for t, _ in found), sum(c for _, c in found) / len(found)
+def is_mixed(eng, ara):
+    """Worth a combined eng+ara read: each model read words of its own script, the English
+    one surely, and neither read the whole line surely on its own."""
+    return (MIXED_MIN_CONF <= eng.conf < SURE_CONF and ara.conf < SURE_CONF
+            and bool(re.search(r"[A-Za-z]{3,}", eng.text) and re.search("[\u0600-\u06FF]{2,}", ara.text)))
+
+
+def best_reading(reader, img, gray, b, is_amount, median_h):
+    """Best reading of one block, by what its first-pass readings look like."""
+    eng, ara = b.extra["eng"], b.extra["ara"]
+    if is_amount and (r := reader.read_amount(img, gray, b)):
+        return r
+    if "@" in eng.text and fields.email(eng.text):
+        r = reader.read_voted(gray, b, "eng", LOWER_ALNUM + "._-@", fields.email)
+        if r:
+            return r
+    if runs := asterisk_runs(gray, b):
+        return reader.read_masked_name(gray, b, runs, eng, ara)
+    if fields.digits(eng.text, 6):
+        r = reader.read_voted(gray, b, "eng", "0123456789", lambda t: fields.digits(t, 6))
+        if r:
+            return r
+    if fields.date(eng.text) or fields.date(ara.text):
+        r = reader.read_voted(gray, b, "eng", None, fields.date)
+        if r:
+            return r
+    if fields.code(eng.text):
+        r = reader.read_voted(gray, b, "eng", ALNUM, fields.code)
+        if r:
+            return r
+    if is_mixed(eng, ara):
+        return reader.read_mixed(gray, b, eng, ara)
+    best, lang = pick_script(eng, ara, b.w / (CHAR_WIDTH * b.h))
+    if lang == "eng" and b.h >= MIXED_SIZE_HEIGHT * median_h and len(best.text.split()) >= 3:
+        best = reader.reread_small_words(gray, b, best)
+    return best
 
 
 def extract_lines(ocr, image_path):
-    """OCR lines with their boxes as [x0, y0, x1, y1] in pixels."""
-    original = cv2.imdecode(np.fromfile(str(image_path), dtype=np.uint8), cv2.IMREAD_COLOR)
-    image = prepare(original)
-    scale = image.shape[0] / original.shape[0]
-    data = pytesseract.image_to_data(image, lang=ocr.lang, config=ocr.config, output_type=pytesseract.Output.DICT)
-    words = [
-        {"text": t.strip(), "conf": float(c), "box": [x, y, x + w, y + h], "line": key}
-        for t, c, x, y, w, h, *key in zip(data["text"], data["conf"], data["left"], data["top"], data["width"],
-                                          data["height"], data["block_num"], data["par_num"], data["line_num"])
-        if t.strip() and float(c) >= 0
-    ]
-    lines = {}
-    for word in words:
-        lines.setdefault(tuple(word["line"]), []).append(word)
+    """OCR lines with their boxes as [x0, y0, x1, y1] in the uploaded image's pixels."""
+    img, (ox, oy, scale) = image.prepare(image.load(image_path))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    blocks = segment.find_blocks(img)
+    reader = ocr.reader
 
-    # Tesseract sizes a line by its tallest glyphs, so a smaller word next to big ones is misread:
-    # the "EGP" after a big "6,000" comes out as Arabic ("مع"). Read those words on their own.
-    small = [
-        word for line in lines.values() if len(line) > 1
-        for word in line
-        if word["box"][3] - word["box"][1] < SMALL_WORD * max(w["box"][3] - w["box"][1] for w in line)
-    ]
-    # every read is its own tesseract.exe, so they run in parallel
-    with ThreadPoolExecutor(WORD_THREADS) as pool:
-        rereads = list(pool.map(lambda w: read_word(image, w["box"], ocr.lang, ocr.word_config), small))
-    for word, (text, conf) in zip(small, rereads):
-        if conf > word["conf"] and " " not in text:  # one word in, one word out: else it read noise
-            word["text"], word["conf"] = text, conf
+    # first pass: every line with both models; the re-reads decide by these readings
+    for b, (eng, ara) in zip(blocks, ocr.pool.map(lambda b: reader.read_both(crop(gray, b)), blocks)):
+        b.extra["eng"], b.extra["ara"] = eng, ara
+    amount = find_amount(blocks, gray)
+    median_h = float(np.median([b.h for b in blocks])) if blocks else 0.0
+    readings = ocr.pool.map(lambda b: best_reading(reader, img, gray, b, b is amount, median_h), blocks)
+
+    kept = []
+    for b, r in zip(blocks, readings):
+        # colour blocks are more often logos than text; the amount was verified by its split
+        floor = COLOUR_MIN_CONFIDENCE if b.extra.get("colour") and b is not amount else MIN_CONFIDENCE
+        if r.text and r.conf / 100 >= floor:
+            kept.append((b, r))
+    # a kept colour block already holds the neutral text found inside it
+    colour = [b for b, _ in kept if b.extra.get("colour")]
+    kept = [(b, r) for b, r in kept if b.extra.get("colour") or not any(inside(b, c) for c in colour)]
 
     out = []
-    for line in lines.values():
-        score = sum(w["conf"] for w in line) / len(line) / 100
-        if score < MIN_CONFIDENCE:
-            continue
-        box = [min(w["box"][0] for w in line), min(w["box"][1] for w in line),
-               max(w["box"][2] for w in line), max(w["box"][3] for w in line)]
-        box = [round(v / scale) for v in box]  # back to the original image's pixels
-        out.append({"text": " ".join(w["text"] for w in line), "score": score, "box": box})
+    for b, r in kept:
+        box = [round(ox + b.x / scale), round(oy + b.y / scale), round(ox + b.x2 / scale), round(oy + b.y2 / scale)]
+        out.append({"text": r.text, "score": r.conf / 100, "box": box})
     return out
+
+
+def inside(a, b):
+    """Most of block ``a`` lies within block ``b``."""
+    w = max(0, min(a.x2, b.x2) - max(a.x, b.x))
+    h = max(0, min(a.y2, b.y2) - max(a.y, b.y))
+    return w * h >= 0.8 * a.w * a.h
 
 
 def extract_text(ocr, image_path):
@@ -148,10 +228,7 @@ def detect_device():
 def create_ocr(cpu_threads=None, device=None):
     if device not in (None, "cpu"):
         raise ValueError(f"Tesseract only runs on the CPU, not {device!r}")
-    if cpu_threads is not None:
-        # read by tesseract.exe (OpenMP), which inherits this process's environment
-        os.environ["OMP_THREAD_LIMIT"] = str(cpu_threads)
-    return TesseractOCR()
+    return TesseractOCR(workers=cpu_threads or os.cpu_count() or 4)
 
 
 def main():

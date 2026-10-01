@@ -27,7 +27,8 @@ money-transaction/
 ├── README.md                      # This file
 ├── paddle_ocr.py                  # PaddleOCR implementation
 ├── easy_ocr.py                    # EasyOCR implementation
-├── tesseract_ocr.py               # Tesseract OCR implementation
+├── tesseract_ocr.py               # Tesseract OCR implementation (same interface as paddle_ocr.py)
+├── tesseract_engine/              # its image preparation, line finding and line readers
 ├── transaction_extractor.py       # Structured field extraction from receipts (uses PaddleOCR)
 ├── transaction_config.py          # Label / provider / currency vocabulary for the extractor
 ├── transaction_output/            # One JSON result per image
@@ -201,10 +202,20 @@ python tesseract_ocr.py
 
 **Output files:** `*.tesseract.txt`
 
-Features:
-- Supports Arabic + English combined language model
-- Groups text by document structure (blocks, paragraphs, lines)
-- Uses confidence scores on a 0-100 scale
+Features (pipeline in `tesseract_engine/`, adapted from the PaymentOcr project):
+- **Image preparation** (`image.py`): dark-mode screenshots inverted, photos of a screen cut out of
+  their surround, straightened and evenly lit, grey pages whitened, wide margins cropped, the image
+  scaled so text is ~28 px tall, tilt up to 10° removed
+- **Line finding** (`segment.py`): OpenCV morphology instead of Tesseract's page layout, icons dropped
+  by colour, card borders removed, ink measured against the local page brightness
+- **Line reading** (`reader.py`): every line read alone with the English and the Arabic
+  `tessdata_best` model, the more plausible script kept; phone / reference numbers, addresses and
+  dates voted across scales with a character whitelist; masked names (`Gameel A O***`) rebuilt around
+  their asterisks; the headline amount split by colour; mixed Arabic + English notes read with the
+  combined model; small words beside big ones re-read at their own size
+- **Fast**: Tesseract runs in-process through `libtesseract-5.dll` (models loaded once per thread),
+  ~0.5 s per receipt; set `OCR_BACKEND=cli` to use `tesseract.exe` instead (about 5x slower)
+- Line scores are 0-1 like Paddle's, but not on its scale (`MIN_CONFIDENCE = 0.2`)
 
 ## Configuration
 

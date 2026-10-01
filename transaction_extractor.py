@@ -298,7 +298,8 @@ def party_section(lines, i):
             break
         if not h_overlap(head, line["box"]) or len(line["text"]) < 3:
             continue                                          # logos / icons beside the column
-        if line["box"][1] - bottom > 2.5 * max(h, height(line)):
+        # 4x bridges one line the OCR could not read, e.g. a masked name "رمضان ت**** م***"
+        if line["box"][1] - bottom > 4 * max(h, height(line)):
             break
         section.append(j)
         bottom = line["box"][3]

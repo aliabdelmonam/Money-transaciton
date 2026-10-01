@@ -115,6 +115,6 @@ CURRENCIES = {
 
 # Known OCR misreads, applied to every line before anything else: (regex, replacement).
 OCR_FIXES = [
-    (r"(?<![A-Za-z])[Pρp]\.?\s?2(?=\s*\d|\s*$)", "ج.م "),  # Arabic "ج.م" read as "P.2" / "ρ2"
+    (r"(?<![A-Za-z])[Pρp][.-]?\s?[2o](?=\s*\d|\s*$)", "ج.م "),  # Arabic "ج.م" read as "P.2" / "ρ2" / "p-2" / "po"
     (r"(?<=\d)\s*[I|l]\s*(?=\d{1,2}:\d{2})", " "),         # "2026 | 10:11" read as "2026I 10:11"
 ]
