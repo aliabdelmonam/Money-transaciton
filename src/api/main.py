@@ -48,7 +48,8 @@ async def lifespan(app: FastAPI):
     providers = []
     reader = None
     if settings.ocr_enabled:
-        reader = ReceiptReader(settings.inbound_media_dir, settings.ocr_workers)
+        reader = ReceiptReader(settings.inbound_media_dir, settings.ocr_workers,
+                               settings.ocr_engine, settings.ocr_device)
         logger.info("loading OCR models...")
         await reader.start()
         providers.append(TransactionReplyProvider(channel, reader, store))

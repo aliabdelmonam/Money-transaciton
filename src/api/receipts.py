@@ -32,7 +32,7 @@ MONEY_FIELDS = ("amount", "fees", "total")
 
 
 class ReceiptReader:
-    """Run the PaddleOCR transaction extractor in a pool of worker processes.
+    """Run the OCR transaction extractor in a pool of worker processes.
 
     Each worker loads its own copy of the models and reads one image at a time,
     so ``workers`` receipts are read in parallel. Processes rather than threads:
@@ -40,9 +40,11 @@ class ReceiptReader:
     loop for the whole read, which makes every in-flight Meta call time out.
     """
 
-    def __init__(self, media_dir: Path, workers: int = 2):
+    def __init__(self, media_dir: Path, workers: int = 2, engine: str = "paddle", device: str = "auto"):
         self._media_dir = Path(media_dir)
         self._workers = workers
+        self._engine = engine
+        self._device = device
         # Split the cores between workers instead of each one using Paddle's default.
         self._cpu_threads = max(1, (os.cpu_count() or 1) // workers)
         self._executor = self._new_executor()
@@ -50,8 +52,8 @@ class ReceiptReader:
     async def start(self) -> None:
         """Start every worker and load its models up front so the first receipts are not slowed down."""
         devices = await asyncio.gather(*(self._run(ocr_worker.ping) for _ in range(self._workers)))
-        logger.info("OCR models loaded in %d workers on %s (%d CPU threads each)",
-                    self._workers, ", ".join(sorted(set(devices))), self._cpu_threads)
+        logger.info("%s OCR loaded in %d workers on %s (%d CPU threads each)",
+                    self._engine, self._workers, ", ".join(sorted(set(devices))), self._cpu_threads)
 
     async def read(self, data: bytes, filename: str) -> dict:
         """Save the image to the inbound media dir and extract its transaction fields."""
@@ -73,7 +75,7 @@ class ReceiptReader:
             max_workers=self._workers,
             mp_context=multiprocessing.get_context("spawn"),
             initializer=ocr_worker.load,
-            initargs=(self._cpu_threads,),
+            initargs=(self._engine, self._device, self._cpu_threads),
         )
 
     async def _run(self, fn, *args):

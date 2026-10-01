@@ -33,3 +33,5 @@ output/
 data/
 
 .venv/
+# Tesseract models (tessdata_best, ~28 MB; tesseract_ocr.py downloads them on first use)
+models/

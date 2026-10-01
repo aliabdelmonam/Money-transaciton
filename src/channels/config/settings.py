@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,7 +30,11 @@ class _Settings(BaseSettings):
     inbound_media_max_bytes: int = 20 * 1024 * 1024
     ocr_enabled: bool = True
     # OCR worker processes = receipts read in parallel. Each one holds its own copy of the models.
-    ocr_workers: int = Field(default=4, ge=1)
+    ocr_workers: int = Field(default=2, ge=1)
+    # paddle | tesseract (Tesseract is CPU only)
+    ocr_engine: Literal["paddle", "tesseract"] = "paddle"
+    # auto = the GPU if there is one, else the CPU; or force cpu / gpu:0
+    ocr_device: str = "auto"
     # Sent as the X-API-Key header on every endpoint except the webhook; unset = all locked.
     api_key: Optional[SecretStr] = None
     channels: _ChannelsSettings = Field(default_factory=_ChannelsSettings)
